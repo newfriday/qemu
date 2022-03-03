@@ -30,7 +30,7 @@ class Scenario(object):
                  auto_converge=False, auto_converge_step=10,
                  compression_mt=False, compression_mt_threads=1,
                  compression_xbzrle=False, compression_xbzrle_cache=10,
-                 multifd=False, multifd_channels=2):
+                 multifd=False, multifd_channels=2, dirty_ring_size=2048):
 
         self._name = name
 
@@ -60,6 +60,8 @@ class Scenario(object):
         self._multifd = multifd
         self._multifd_channels = multifd_channels
 
+        self._dirty_ring_size = dirty_ring_size
+
     def serialize(self):
         return {
             "name": self._name,
@@ -79,6 +81,7 @@ class Scenario(object):
             "compression_xbzrle_cache": self._compression_xbzrle_cache,
             "multifd": self._multifd,
             "multifd_channels": self._multifd_channels,
+            "dirty_ring_size": self._dirty_ring_size,
         }
 
     @classmethod
@@ -100,4 +103,5 @@ class Scenario(object):
             data["compression_xbzrle"],
             data["compression_xbzrle_cache"],
             data["multifd"],
-            data["multifd_channels"])
+            data["multifd_channels"],
+            data["dirty_ring_size"])
