@@ -30,7 +30,9 @@ class Scenario(object):
                  auto_converge=False, auto_converge_step=10,
                  compression_mt=False, compression_mt_threads=1,
                  compression_xbzrle=False, compression_xbzrle_cache=10,
-                 multifd=False, multifd_channels=2, dirty_ring_size=2048):
+                 multifd=False, multifd_channels=2, dirty_ring_size=2048,
+                 dirty_limit=False, x_vcpu_dirty_limit_period=500,
+                 vcpu_dirty_limit=1):
 
         self._name = name
 
@@ -62,6 +64,10 @@ class Scenario(object):
 
         self._dirty_ring_size = dirty_ring_size
 
+        self._dirty_limit = dirty_limit
+        self._x_vcpu_dirty_limit_period = x_vcpu_dirty_limit_period
+        self._vcpu_dirty_limit = vcpu_dirty_limit
+
     def serialize(self):
         return {
             "name": self._name,
@@ -82,6 +88,9 @@ class Scenario(object):
             "multifd": self._multifd,
             "multifd_channels": self._multifd_channels,
             "dirty_ring_size": self._dirty_ring_size,
+            "dirty_limit": self._dirty_limit,
+            "x_vcpu_dirty_limit_period": self._x_vcpu_dirty_limit_period,
+            "vcpu_dirty_limit": self._vcpu_dirty_limit,
         }
 
     @classmethod
@@ -104,4 +113,7 @@ class Scenario(object):
             data["compression_xbzrle_cache"],
             data["multifd"],
             data["multifd_channels"],
-            data["dirty_ring_size"])
+            data["dirty_ring_size"],
+            data["dirty_limit"],
+            data["x_vcpu_dirty_limit_period"],
+            data["vcpu_dirty_limit"])
