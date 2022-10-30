@@ -1329,6 +1329,21 @@ void print_net_client(Monitor *mon, NetClientState *nc)
                    nc->queue_index,
                    NetClientDriver_str(nc->info->type),
                    nc->info_str);
+    if (nc->info->type != NET_CLIENT_DRIVER_NIC) {
+        NetDevInfo *info = query_netdev(nc);
+        if (info) {
+            monitor_printf(mon, "netdev info: ufo=%s, vnet-hdr=%s, "
+                "vnet-hdr-len=%s", info->ufo ? "on" : "off",
+                info->vnet_hdr ? "on" : "off",
+                info->vnet_hdr_len ? "on" : "off");
+            if (info->has_acked_features) {
+                monitor_printf(mon, ", acked-features=0x%" PRIx64,
+                    info->acked_features);
+            }
+            monitor_printf(mon, "\n");
+            g_free(info);
+        }
+    }
     if (!QTAILQ_EMPTY(&nc->filters)) {
         monitor_printf(mon, "filters:\n");
     }
