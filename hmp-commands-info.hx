@@ -880,6 +880,20 @@ SRST
     Display the vcpu dirty page limit information.
 ERST
 
+    {
+        .name       = "netdev",
+        .args_type  = "",
+        .params     = "",
+        .help       = "show information about netdev, guest acked features are "
+                      "also printed if supporting virtio-net dataplane offloading",
+        .cmd        = hmp_info_netdev,
+    },
+
+SRST
+  ``info netdev``
+    Display information about netdev.
+ERST
+
 #if defined(TARGET_I386)
     {
         .name       = "sgx",

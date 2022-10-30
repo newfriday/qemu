@@ -55,6 +55,7 @@
 #include "net/filter.h"
 #include "net/vhost-user.h"
 #include "qapi/string-output-visitor.h"
+#include "monitor/hmp.h"
 
 /* Net bridge is currently not supported for W32. */
 #if !defined(_WIN32)
@@ -1266,6 +1267,35 @@ NetDevInfoList *qmp_query_netdev(Error **errp)
     }
 
     return head;
+}
+
+void hmp_info_netdev(Monitor *mon, const QDict *qdict)
+{
+    NetDevInfoList *info, *head, *info_list = NULL;
+    Error *err = NULL;
+
+    info_list = qmp_query_netdev(&err);
+    if (err) {
+        hmp_handle_error(mon, err);
+        return;
+    }
+
+    head = info_list;
+    for (info = head; info != NULL; info = info->next) {
+        monitor_printf(mon, "%s: %s device, ufo %s, vnet-hdr %s, vnet-hdr-len %s ",
+                            info->value->name,
+                            NetClientDriver_str(info->value->type),
+                            info->value->ufo ? "supported" : "unsupported",
+                            info->value->vnet_hdr ? "supported" : "unsupported",
+                            info->value->vnet_hdr_len ? "supported" : "unsupported");
+        if (info->value->has_acked_features) {
+            monitor_printf(mon, ", acked-features 0x%" PRIx64,
+                                info->value->acked_features);
+        }
+        monitor_printf(mon, "\n");
+    }
+
+    g_free(info_list);
 }
 
 static void netfilter_print_info(Monitor *mon, NetFilterState *nf)
