@@ -29,6 +29,9 @@
 #include "libqos/qgraph_internal.h"
 #include "hw/virtio/virtio-net.h"
 
+#include "migration-helpers.h"
+#include "qapi/qmp/qlist.h"
+
 #include "standard-headers/linux/vhost_types.h"
 #include "standard-headers/linux/virtio_ids.h"
 #include "standard-headers/linux/virtio_net.h"
@@ -167,6 +170,7 @@ typedef struct TestServer {
     int test_flags;
     int queues;
     struct vhost_user_ops *vu_ops;
+    uint64_t features;
 } TestServer;
 
 struct vhost_user_ops {
@@ -796,6 +800,62 @@ static void test_read_guest_mem(void *obj, void *arg, QGuestAllocator *alloc)
     read_guest_mem_server(global_qtest, server);
 }
 
+static QDict *query_netdev(QTestState *who)
+{
+    QDict *rsp;
+
+    rsp = qtest_qmp(who, "{ 'execute': 'query-netdev' }");
+    g_assert(!qdict_haskey(rsp, "error"));
+    g_assert(qdict_haskey(rsp, "return"));
+
+    return rsp;
+}
+
+static uint64_t get_acked_features(QTestState *who)
+{
+    QDict *rsp_return;
+    QList *info_list;
+    const QListEntry *entry;
+    QDict *info;
+    uint64_t acked_features;
+
+    rsp_return = query_netdev(who);
+    g_assert(rsp_return);
+
+    info_list = qdict_get_qlist(rsp_return, "return");
+    g_assert(info_list && !qlist_empty(info_list));
+
+    entry = qlist_first(info_list);
+    g_assert(entry);
+
+    info = qobject_to(QDict, qlist_entry_obj(entry));
+    g_assert(info);
+
+    acked_features = qdict_get_try_int(info, "acked-features", 0);
+
+    qobject_unref(rsp_return);
+    return acked_features;
+}
+
+static void read_acked_features(QTestState *qts, TestServer *s)
+{
+    uint64_t acked_features;
+
+    acked_features = get_acked_features(qts);
+    g_assert_cmpint(acked_features, ==, s->features);
+}
+
+static void test_read_acked_features(void *obj, void *arg, QGuestAllocator *alloc)
+{
+    TestServer *server = arg;
+
+    if (!wait_for_fds(server)) {
+        return;
+    }
+
+    read_acked_features(global_qtest, server);
+}
+
 static void test_migrate(void *obj, void *arg, QGuestAllocator *alloc)
 {
     TestServer *s = arg;
@@ -1037,6 +1097,7 @@ static void vu_net_set_features(TestServer *s, CharBackend *chr,
         qemu_chr_fe_disconnect(chr);
         s->test_flags = TEST_FLAGS_BAD;
     }
+    s->features = msg->payload.u64;
 }
 
 static void vu_net_get_protocol_features(TestServer *s, CharBackend *chr,
@@ -1077,6 +1138,10 @@ static void register_vhost_user_test(void)
     qos_add_test("vhost-user/read-guest-mem/memfile",
                  "virtio-net",
                  test_read_guest_mem, &opts);
+
+    qos_add_test("vhost-user/read_acked_features",
+                 "virtio-net",
+                 test_read_acked_features, &opts);
 
     if (qemu_memfd_check(MFD_ALLOW_SEALING)) {
         opts.before = vhost_user_test_setup_memfd;
