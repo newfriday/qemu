@@ -53,6 +53,7 @@
 #include "sysemu/runstate.h"
 #include "net/colo-compare.h"
 #include "net/filter.h"
+#include "net/vhost-user.h"
 #include "qapi/string-output-visitor.h"
 
 /* Net bridge is currently not supported for W32. */
@@ -1222,6 +1223,49 @@ void qmp_netdev_del(const char *id, Error **errp)
     if (opts) {
         qemu_opts_del(opts);
     }
+}
+
+static NetDevInfo *query_netdev(NetClientState *nc)
+{
+    NetDevInfo *info = NULL;
+
+    if (!nc || !nc->is_netdev) {
+        return NULL;
+    }
+
+    info = g_malloc0(sizeof(*info));
+    info->name = g_strdup(nc->name);
+    info->type = nc->info->type;
+    info->ufo = nc->info->has_ufo;
+    info->vnet_hdr = nc->info->has_vnet_hdr;
+    info->vnet_hdr_len = nc->info->has_vnet_hdr_len;
+
+    if (nc->info->type == NET_CLIENT_DRIVER_VHOST_USER) {
+        info->has_acked_features = true;
+        info->acked_features = vhost_user_get_acked_features(nc);
+    }
+
+    return info;
+}
+
+NetDevInfoList *qmp_query_netdev(Error **errp)
+{
+    NetClientState *nc;
+    NetDevInfo *info = NULL;
+    NetDevInfoList *head = NULL, **tail = &head;
+
+    QTAILQ_FOREACH(nc, &net_clients, next) {
+        if (nc->info->type == NET_CLIENT_DRIVER_NIC) {
+            continue;
+        }
+
+        info = query_netdev(nc);
+        if (info) {
+            QAPI_LIST_APPEND(tail, info);
+        }
+    }
+
+    return head;
 }
 
 static void netfilter_print_info(Monitor *mon, NetFilterState *nf)

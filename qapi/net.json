@@ -631,6 +631,72 @@
                        'if': 'CONFIG_VMNET' } } }
 
 ##
+# @NetDevInfo:
+#
+# NetDev information.  This structure describes a NetDev information, including
+# capabilities and negotiated features.
+#
+# @name: The NetDev name.
+#
+# @type: Type of NetDev.
+#
+# @ufo: True if NetDev has ufo capability.
+#
+# @vnet-hdr: True if NetDev has vnet_hdr.
+#
+# @vnet-hdr-len: True if given length can be assigned to NetDev.
+#
+# @acked-features: Negotiated features with vhost slave device if device support
+#                  dataplane offload.
+#
+# Since:  7.1
+##
+{'struct': 'NetDevInfo',
+ 'data': {
+    'name': 'str',
+    'type': 'NetClientDriver',
+    'ufo':'bool',
+    'vnet-hdr':'bool',
+    'vnet-hdr-len':'bool',
+    '*acked-features': 'uint64' } }
+
+##
+# @query-netdev:
+#
+# Get a list of NetDevInfo for all virtual netdev peer devices.
+#
+# Returns: a list of @NetDevInfo describing each virtual netdev peer device.
+#
+# Since: 7.1
+#
+# Example:
+#
+# -> { "execute": "query-netdev" }
+# <- {
+#       "return":[
+#          {
+#             "name":"hostnet0",
+#             "type":"vhost-user",
+#             "ufo":true,
+#             "vnet-hdr":true,
+#             "vnet-hdr-len":true,
+#             "acked-features":"5111807907",
+#          },
+#          {
+#             "name":"hostnet1",
+#             "type":"vhost-user",
+#             "ufo":true,
+#             "vnet-hdr":true,
+#             "vnet-hdr-len":true,
+#             "acked-features":"5111807907",
+#          }
+#       ]
+#    }
+#
+##
+{ 'command': 'query-netdev', 'returns': ['NetDevInfo'] }
+
+##
 # @RxState:
 #
 # Packets receiving state
