@@ -815,8 +815,6 @@ static void vfio_migration_deinit(VFIODevice *vbasedev)
 
 static int vfio_block_migration(VFIODevice *vbasedev, Error *err, Error **errp)
 {
-    int ret;
-
     if (vbasedev->enable_migration == ON_OFF_AUTO_ON) {
         error_propagate(errp, err);
         return -EINVAL;
@@ -825,13 +823,7 @@ static int vfio_block_migration(VFIODevice *vbasedev, Error *err, Error **errp)
     vbasedev->migration_blocker = error_copy(err);
     error_free(err);
 
-    ret = migrate_add_blocker(vbasedev->migration_blocker, errp);
-    if (ret < 0) {
-        error_free(vbasedev->migration_blocker);
-        vbasedev->migration_blocker = NULL;
-    }
-
-    return ret;
+    return migrate_add_blocker(&vbasedev->migration_blocker, errp);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -918,9 +910,5 @@ void vfio_migration_exit(VFIODevice *vbasedev)
         vfio_migration_deinit(vbasedev);
     }
 
-    if (vbasedev->migration_blocker) {
-        migrate_del_blocker(vbasedev->migration_blocker);
-        error_free(vbasedev->migration_blocker);
-        vbasedev->migration_blocker = NULL;
-    }
+    migrate_del_blocker(&vbasedev->migration_blocker);
 }
