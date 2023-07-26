@@ -22,6 +22,7 @@
 #include "sysemu/runstate.h"
 #include "migration/colo.h"
 #include "migration/misc.h"
+#include "migration/blocker.h"
 #include "migration.h"
 #include "migration-stats.h"
 #include "qemu-file.h"
@@ -626,6 +627,11 @@ bool migrate_caps_check(bool *old_caps, bool *new_caps, Error **errp)
                    " property 'dirty-ring-size' set");
             return false;
         }
+    }
+
+    if (new_caps[MIGRATION_CAPABILITY_X_COLO]) {
+        return migrate_add_blocker_always("x-colo is not compatible with cpr",
+                                          errp, MIG_MODE_CPR_EXEC, -1);
     }
 
     return true;
