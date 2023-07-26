@@ -14,6 +14,7 @@ system_ss.add(files(
   'channel.c',
   'channel-block.c',
   'dirtyrate.c',
+  'cpr.c',
   'cpr-state.c',
   'exec.c',
   'fd.c',
