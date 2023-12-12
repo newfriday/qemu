@@ -47,6 +47,10 @@ if have_afalg
   crypto_ss.add(if_true: files('afalg.c', 'cipher-afalg.c', 'hash-afalg.c'))
 endif
 
+if crypto_gmt.found()
+  crypto_ss.add(crypto_gmt, files('cipher-gmt.c'))
+endif
+
 system_ss.add(when: gnutls, if_true: files('tls-cipher-suites.c'))
 
 util_ss.add(files(

@@ -1523,6 +1523,29 @@ if nettle.found() and gmp.found()
                        required: get_option('nettle'))
 endif
 
+crypto_gmt = not_found
+if not get_option('crypto_gmt').auto() or have_system
+  crypto_gmt = cc.find_library('swsds', has_headers: ['swsds.h'],
+                                required: get_option('crypto_gmt'))
+  if crypto_gmt.found() and not cc.links('''
+    #include <stddef.h>
+    #include <swsds.h>
+    int main(void) {
+      unsigned char pIv[16] = {0};
+      unsigned char pbPlainText[16] = {0};
+      unsigned char pbTempData[128] = {0};
+      unsigned int  ulTempDataLen;
+      SDF_Encrypt(NULL, NULL, SGD_SM4_ECB, pIv, pbPlainText, 128, pbTempData, &ulTempDataLen);
+      return 0;
+    }''', dependencies: crypto_gmt)
+    crypto_gmt = not_found
+    if get_option('crypto_gmt').enabled()
+      error('could not link swsds')
+    else
+      warning('could not link swsds, disabling')
+    endif
+  endif
+endif
 
 gtk = not_found
 gtkx11 = not_found
@@ -2199,6 +2222,7 @@ config_host_data.set('CONFIG_GNUTLS_CRYPTO', gnutls_crypto.found())
 config_host_data.set('CONFIG_TASN1', tasn1.found())
 config_host_data.set('CONFIG_GCRYPT', gcrypt.found())
 config_host_data.set('CONFIG_NETTLE', nettle.found())
+config_host_data.set('CONFIG_CRYPTO_GMT', crypto_gmt.found())
 config_host_data.set('CONFIG_HOGWEED', hogweed.found())
 config_host_data.set('CONFIG_QEMU_PRIVATE_XTS', xts == 'private')
 config_host_data.set('CONFIG_MALLOC_TRIM', has_malloc_trim)
@@ -4271,6 +4295,7 @@ if gnutls.found()
 endif
 summary_info += {'libgcrypt':         gcrypt}
 summary_info += {'nettle':            nettle}
+summary_info += {'GMT support':       crypto_gmt}
 if nettle.found()
    summary_info += {'  XTS':             xts != 'private'}
 endif

@@ -151,6 +151,8 @@ QCryptoCipher *qcrypto_cipher_new(QCryptoCipherAlgorithm alg,
 
 #ifdef CONFIG_AF_ALG
     cipher = qcrypto_afalg_cipher_ctx_new(alg, mode, key, nkey, NULL);
+#elif defined(CONFIG_CRYPTO_GMT)
+    cipher = qcrypto_gmt_cipher_ctx_new(alg, mode, key, nkey, NULL);
 #endif
 
     if (!cipher) {
