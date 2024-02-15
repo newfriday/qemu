@@ -38,7 +38,7 @@ static const size_t alg_key_len[QCRYPTO_CIPHER_ALG__MAX] = {
     [QCRYPTO_CIPHER_ALG_TWOFISH_128] = 16,
     [QCRYPTO_CIPHER_ALG_TWOFISH_192] = 24,
     [QCRYPTO_CIPHER_ALG_TWOFISH_256] = 32,
-#ifdef CONFIG_CRYPTO_SM4
+#if defined CONFIG_CRYPTO_SM4 || defined CONFIG_GMT_0018_2012
     [QCRYPTO_CIPHER_ALG_SM4] = 16,
 #endif
 };
@@ -56,7 +56,7 @@ static const size_t alg_block_len[QCRYPTO_CIPHER_ALG__MAX] = {
     [QCRYPTO_CIPHER_ALG_TWOFISH_128] = 16,
     [QCRYPTO_CIPHER_ALG_TWOFISH_192] = 16,
     [QCRYPTO_CIPHER_ALG_TWOFISH_256] = 16,
-#ifdef CONFIG_CRYPTO_SM4
+#if defined CONFIG_CRYPTO_SM4 || defined CONFIG_GMT_0018_2012
     [QCRYPTO_CIPHER_ALG_SM4] = 16,
 #endif
 };
@@ -157,6 +157,8 @@ QCryptoCipher *qcrypto_cipher_new(QCryptoCipherAlgorithm alg,
 
 #ifdef CONFIG_AF_ALG
     cipher = qcrypto_afalg_cipher_ctx_new(alg, mode, key, nkey, NULL);
+#elif defined CONFIG_GMT_0018_2012
+    cipher = qcrypto_gmt_cipher_ctx_new(alg, mode, key, nkey, NULL);
 #endif
 
     if (!cipher) {
