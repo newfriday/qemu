@@ -3422,6 +3422,7 @@ Detached LUKS header
 M: Hyman Huang <yong.huang@smartx.com>
 S: Maintained
 F: tests/qemu-iotests/tests/luks-detached-header
+F: docs/devel/luks-detached-header.rst
 
 D-Bus
 M: Marc-André Lureau <marcandre.lureau@redhat.com>
