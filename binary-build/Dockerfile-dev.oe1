@@ -1,0 +1,5 @@
+FROM qemu-upstream-builder:latest
+
+RUN sed -i '1c #!/usr/bin/python3.7' /usr/bin/gdbus-codegen
+
+#RUN yum install -y dev-related.rpm

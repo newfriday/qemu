@@ -1,0 +1,37 @@
+FROM registry.smtx.io/openeuler/openeuler:20.03-lts-sp3
+
+RUN yum groupinstall -y "Development Tools"
+RUN yum install -y dnf-plugins-core python37 \
+    python3-importlib-metadata meson wget \
+    mpfr-devel.x86_64 libmpc-devel.x86_64 \
+    gpm-devel.x86_64 openssl-devel bzip2-devel \
+    libffi-devel zlib-devel readline-devel \
+    sqlite-devel xz-devel
+RUN yum-builddep -y qemu gcc
+
+COPY gcc-7.5.0.tar.xz /home/
+COPY Python-3.12.2.tgz /home/
+
+WORKDIR /home
+RUN tar -xf gcc-7.5.0.tar.xz
+WORKDIR /home/gcc-7.5.0
+
+RUN ./configure --disable-multilib --prefix="/usr"
+RUN make -j$(nproc --ignore=1)
+RUN make install
+
+RUN rm -rf /home/gcc-7.5.0
+
+WORKDIR /home
+RUN tar xf Python-3.12.2.tgz
+WORKDIR /home/Python-3.12.2
+
+RUN mkdir -p /opt/runtime/python3.12
+RUN ./configure --prefix=/opt/runtime/python3.12 --enable-optimizations --with-ensurepip=install
+RUN make -j$(nproc)
+RUN make install
+
+RUN /opt/runtime/python3.12/bin/python3.12 -m venv /opt/venv
+RUN source /opt/venv/bin/activate
+
+RUN rm -rf /home/Python-3.12.2
