@@ -1,0 +1,3 @@
+FROM qemu-upstream-builder:latest
+
+#RUN yum install -y dev-related.rpm

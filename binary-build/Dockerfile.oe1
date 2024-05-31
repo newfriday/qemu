@@ -1,0 +1,19 @@
+FROM registry.smtx.io/openeuler/openeuler:20.03-lts-sp3
+
+RUN yum groupinstall -y "Development Tools"
+RUN yum install -y dnf-plugins-core python37 \
+    python3-importlib-metadata meson wget \
+    mpfr-devel.x86_64 libmpc-devel.x86_64 gpm-devel.x86_64
+RUN yum-builddep -y qemu gcc
+
+COPY gcc-7.5.0.tar.xz /home/
+
+WORKDIR /home
+RUN tar -xf gcc-7.5.0.tar.xz
+WORKDIR /home/gcc-7.5.0
+
+RUN ./configure --disable-multilib --prefix="/usr"
+RUN make -j$(nproc --ignore=1)
+RUN make install
+
+RUN rm -rf /home/gcc-7.5.0
