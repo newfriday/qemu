@@ -58,9 +58,8 @@ options:
 # later. See the COPYING file in the top-level directory.
 
 import argparse
-from importlib.metadata import (
+from importlib_metadata import (
     Distribution,
-    EntryPoint,
     PackageNotFoundError,
     distribution,
     version,
@@ -418,8 +417,7 @@ def _get_entry_points(packages: Sequence[str]) -> Iterator[str]:
     def _generator() -> Iterator[str]:
         for package in packages:
             try:
-                entry_points: Iterator[EntryPoint] = \
-                    iter(distribution(package).entry_points)
+                entry_points = distribution(package).entry_points
             except PackageNotFoundError:
                 continue
 

@@ -518,7 +518,8 @@ class QAPISchemaParser:
                         self.accept(False)
                         line = self.get_doc_line()
                     while (line is not None
-                           and (match := self._match_at_name_colon(line))):
+                            and self._match_at_name_colon(line)):
+                        match = self._match_at_name_colon(line)
                         doc.new_feature(self.info, match.group(1))
                         text = line[match.end():]
                         if text:
@@ -528,7 +529,8 @@ class QAPISchemaParser:
                         raise QAPIParseError(
                             self, 'feature descriptions expected')
                     no_more_args = True
-                elif match := self._match_at_name_colon(line):
+                elif self._match_at_name_colon(line):
+                    match = self._match_at_name_colon(line)
                     # description
                     if no_more_args:
                         raise QAPIParseError(
@@ -536,18 +538,20 @@ class QAPISchemaParser:
                             "description of '@%s:' follows a section"
                             % match.group(1))
                     while (line is not None
-                           and (match := self._match_at_name_colon(line))):
+                           and (self._match_at_name_colon(line))):
+                        match = self._match_at_name_colon(line)
                         doc.new_argument(self.info, match.group(1))
                         text = line[match.end():]
                         if text:
                             doc.append_line(text)
                         line = self.get_doc_indented(doc)
                     no_more_args = True
-                elif match := re.match(
-                        r'(Returns|Errors|Since|Notes?|Examples?|TODO)'
-                        r'(?!::): *',
-                        line,
-                ):
+                elif re.match(
+                        r'(Returns|Errors|Since|Notes?|Examples?|TODO): *',
+                        line):
+                    match = re.match(
+                        r'(Returns|Errors|Since|Notes?|Examples?|TODO): *',
+                        line)
                     # tagged section
 
                     # Note: "sections" with two colons are left alone as
@@ -596,7 +600,8 @@ class QAPISchemaParser:
             doc.ensure_untagged_section(self.info)
             first = True
             while line is not None:
-                if match := self._match_at_name_colon(line):
+                if self._match_at_name_colon(line):
+                    match = self._match_at_name_colon(line)
                     raise QAPIParseError(
                         self,
                         "'@%s:' not allowed in free-form documentation"
