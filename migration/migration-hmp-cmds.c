@@ -358,6 +358,11 @@ void hmp_info_migrate_parameters(Monitor *mon, const QDict *qdict)
                                MIGRATION_PARAMETER_DIRECT_IO),
                            params->direct_io ? "on" : "off");
         }
+
+        assert(params->has_cpu_throttle_aggressive);
+        monitor_printf(mon, "%s: %s\n",
+            MigrationParameter_str(MIGRATION_PARAMETER_CPU_THROTTLE_AGGRESSIVE),
+            params->cpu_throttle_aggressive ? "on" : "off");
     }
 
     qapi_free_MigrationParameters(params);
@@ -634,6 +639,10 @@ void hmp_migrate_set_parameter(Monitor *mon, const QDict *qdict)
     case MIGRATION_PARAMETER_DIRECT_IO:
         p->has_direct_io = true;
         visit_type_bool(v, param, &p->direct_io, &err);
+        break;
+    case MIGRATION_PARAMETER_CPU_THROTTLE_AGGRESSIVE:
+        p->has_cpu_throttle_aggressive = true;
+        visit_type_bool(v, param, &p->cpu_throttle_aggressive, &err);
         break;
     default:
         assert(0);

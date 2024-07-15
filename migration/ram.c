@@ -538,15 +538,17 @@ static size_t save_page_header(PageSearchStatus *pss, QEMUFile *f,
  * fast and will not effectively converge, even with auto-converge.
  */
 static void mig_throttle_guest_down(uint64_t bytes_dirty_period,
+                                    uint64_t bytes_xfer_period,
                                     uint64_t bytes_dirty_threshold)
 {
     uint64_t pct_initial = migrate_cpu_throttle_initial();
     uint64_t pct_increment = migrate_cpu_throttle_increment();
     bool pct_tailslow = migrate_cpu_throttle_tailslow();
     int pct_max = migrate_max_cpu_throttle();
+    bool aggressive = migrate_cpu_throttle_aggressive() ;
 
     uint64_t throttle_now = cpu_throttle_get_percentage();
-    uint64_t cpu_now, cpu_ideal, throttle_inc;
+    uint64_t cpu_now, cpu_ideal, throttle_inc, aggressive_inc;
 
     /* We have not started throttling yet. Let's start it. */
     if (!cpu_throttle_active()) {
@@ -555,6 +557,14 @@ static void mig_throttle_guest_down(uint64_t bytes_dirty_period,
         /* Throttling already on, just increase the rate */
         if (!pct_tailslow) {
             throttle_inc = pct_increment;
+
+            if (aggressive) {
+                aggressive_inc = 100 * ((bytes_dirty_period - bytes_xfer_period) * 1.0 /
+                                 bytes_dirty_period);
+                if (aggressive_inc - throttle_now > throttle_inc) {
+                    throttle_inc = aggressive_inc;
+                }
+            }
         } else {
             /* Compute the ideal CPU percentage used by Guest, which may
              * make the dirty rate match the dirty rate threshold. */
@@ -1034,6 +1044,7 @@ static void migration_trigger_throttle(RAMState *rs)
         if (migrate_auto_converge()) {
             trace_migration_throttle();
             mig_throttle_guest_down(bytes_dirty_period,
+                                    bytes_xfer_period,
                                     bytes_dirty_threshold);
         } else if (migrate_dirty_limit()) {
             migration_dirty_limit_guest();

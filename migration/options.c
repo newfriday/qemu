@@ -162,6 +162,8 @@ Property migration_properties[] = {
     DEFINE_PROP_ZERO_PAGE_DETECTION("zero-page-detection", MigrationState,
                        parameters.zero_page_detection,
                        ZERO_PAGE_DETECTION_MULTIFD),
+    DEFINE_PROP_BOOL("cpu-throttle-aggressive", MigrationState,
+                      parameters.cpu_throttle_aggressive, false),
 
     /* Migration capabilities */
     DEFINE_PROP_MIG_CAP("x-xbzrle", MIGRATION_CAPABILITY_XBZRLE),
@@ -843,6 +845,13 @@ ZeroPageDetection migrate_zero_page_detection(void)
     return s->parameters.zero_page_detection;
 }
 
+bool migrate_cpu_throttle_aggressive(void)
+{
+    MigrationState *s = migrate_get_current();
+
+    return s->parameters.cpu_throttle_aggressive;
+}
+
 /* parameters helpers */
 
 AnnounceParameters *migrate_announce_params(void)
@@ -926,6 +935,8 @@ MigrationParameters *qmp_query_migrate_parameters(Error **errp)
     params->zero_page_detection = s->parameters.zero_page_detection;
     params->has_direct_io = true;
     params->direct_io = s->parameters.direct_io;
+    params->has_cpu_throttle_aggressive = true;
+    params->cpu_throttle_aggressive = s->parameters.cpu_throttle_aggressive;
 
     return params;
 }
@@ -959,6 +970,7 @@ void migrate_params_init(MigrationParameters *params)
     params->has_mode = true;
     params->has_zero_page_detection = true;
     params->has_direct_io = true;
+    params->has_cpu_throttle_aggressive = true;
 }
 
 /*
@@ -1247,6 +1259,10 @@ static void migrate_params_test_apply(MigrateSetParameters *params,
     if (params->has_direct_io) {
         dest->direct_io = params->direct_io;
     }
+
+    if (params->has_cpu_throttle_aggressive) {
+        dest->cpu_throttle_aggressive = params->cpu_throttle_aggressive;
+    }
 }
 
 static void migrate_params_apply(MigrateSetParameters *params, Error **errp)
@@ -1375,6 +1391,10 @@ static void migrate_params_apply(MigrateSetParameters *params, Error **errp)
 
     if (params->has_direct_io) {
         s->parameters.direct_io = params->direct_io;
+    }
+
+    if (params->has_cpu_throttle_aggressive) {
+        s->parameters.cpu_throttle_aggressive = params->cpu_throttle_aggressive;
     }
 }
 
