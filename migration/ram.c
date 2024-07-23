@@ -414,6 +414,17 @@ struct RAMState {
      * RAM migration.
      */
     unsigned int postcopy_bmap_sync_requested;
+
+    /*
+     * Ratio of bytes_dirty_period and bytes_xfer_period in the last
+     * iteration
+     */
+    uint64_t dirty_ratio_pct;
+    /*
+     * How many times is the most recent iteration dirty ratio is
+     * higher than previous one
+     */
+    int dirty_ratio_high_cnt;
 };
 typedef struct RAMState RAMState;
 
@@ -1013,6 +1024,32 @@ static void migration_dirty_limit_guest(void)
     trace_migration_dirty_limit_guest(quota_dirtyrate);
 }
 
+static bool migration_dirty_ratio_unexpected(RAMState *rs)
+{
+    uint64_t threshold = migrate_throttle_trigger_threshold();
+    uint64_t bytes_xfer_period =
+        migration_transferred_bytes() - rs->bytes_xfer_prev;
+    uint64_t bytes_dirty_period = rs->num_dirty_pages_period * TARGET_PAGE_SIZE;
+    uint64_t prev, curr;
+
+    /* Skip the first iterations since it isn't helpful */
+    if (stat64_get(&mig_stats.dirty_sync_count) == 1 || !bytes_xfer_period) {
+        return false;
+    }
+
+    curr = 100 * (bytes_dirty_period * 1.0 / bytes_xfer_period);
+
+    prev = rs->dirty_ratio_pct;
+    rs->dirty_ratio_pct = curr;
+
+    if (prev == 0 || curr <= threshold) {
+        return false;
+    }
+
+    trace_dirty_ratio_pct(curr, prev);
+    return curr >= prev;
+}
+
 static void migration_trigger_throttle(RAMState *rs)
 {
     uint64_t threshold = migrate_throttle_trigger_threshold();
@@ -1028,9 +1065,14 @@ static void migration_trigger_throttle(RAMState *rs)
      * we were in this routine reaches the threshold. If that happens
      * twice, start or increase throttling.
      */
-    if ((bytes_dirty_period > bytes_dirty_threshold) &&
-        (++rs->dirty_rate_high_cnt >= 2)) {
-        rs->dirty_rate_high_cnt = 0;
+    if ((migration_dirty_ratio_unexpected(rs) &&
+         (++rs->dirty_ratio_high_cnt >= 2)) ||
+        ((bytes_dirty_period > bytes_dirty_threshold) &&
+         (++rs->dirty_rate_high_cnt >= 2))) {
+        rs->dirty_rate_high_cnt =
+            rs->dirty_rate_high_cnt >= 2 ? 0 : rs->dirty_rate_high_cnt;
+        rs->dirty_ratio_high_cnt =
+            rs->dirty_ratio_high_cnt >= 2 ? 0 : rs->dirty_ratio_high_cnt;
         if (migrate_auto_converge()) {
             trace_migration_throttle();
             mig_throttle_guest_down(bytes_dirty_period,
