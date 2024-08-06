@@ -31,6 +31,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__),
                              '..', '..', '..', 'python'))
 from qemu.machine import QEMUMachine
 
+MULTIFD_SUPPORTED_COMPRESSIONS = ("zlib", "zstd", "qpl", "uadk")
 
 class Engine(object):
 
@@ -197,6 +198,12 @@ class Engine(object):
                            ])
             resp = src.cmd("migrate-set-parameters",
                            multifd_channels=scenario._multifd_channels)
+
+            if (scenario._multifd_compression and
+                scenario._multifd_compression in MULTIFD_SUPPORTED_COMPRESSIONS):
+                resp = src.command("migrate-set-parameters",
+                                   multifd_compression=scenario._multifd_compression)
+
             resp = dst.cmd("migrate-set-capabilities",
                            capabilities = [
                                { "capability": "multifd",
@@ -204,6 +211,11 @@ class Engine(object):
                            ])
             resp = dst.cmd("migrate-set-parameters",
                            multifd_channels=scenario._multifd_channels)
+
+            if (scenario._multifd_compression and
+                scenario._multifd_compression in MULTIFD_SUPPORTED_COMPRESSIONS):
+                resp = dst.command("migrate-set-parameters",
+                                   multifd_compression=scenario._multifd_compression)
 
         if scenario._dirty_limit:
             if not hardware._dirty_ring_size:
