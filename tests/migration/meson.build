@@ -7,12 +7,13 @@ stress = executable(
   files('stress.c'),
   dependencies: [glib_static, sysprof],
   link_args: ['-static'],
-  build_by_default: false,
+  build_by_default: true,
 )
 
 custom_target(
   'initrd-stress.img',
   output: 'initrd-stress.img',
   input: stress,
-  command: [find_program('initrd-stress.sh'), '@OUTPUT@', '@INPUT@']
+  command: [find_program('initrd-stress.sh'), '@OUTPUT@', '@INPUT@'],
+  build_by_default: true,
 )
