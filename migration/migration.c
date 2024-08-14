@@ -3526,6 +3526,8 @@ static void *migration_thread(void *opaque)
 
     trace_migration_thread_setup_complete();
 
+    migration_detached_throttle_setup();
+
     while (migration_is_active()) {
         if (urgent || !migration_rate_exceeded(s->to_dst_file)) {
             MigIterateState iter_state = migration_iteration_run(s);
@@ -3558,6 +3560,7 @@ static void *migration_thread(void *opaque)
 
 out:
     trace_migration_thread_after_loop();
+    migration_detached_throttle_cleanup();
     migration_iteration_finish(s);
     object_unref(OBJECT(s));
     rcu_unregister_thread();

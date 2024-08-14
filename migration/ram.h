@@ -93,4 +93,8 @@ void ram_write_tracking_prepare(void);
 int ram_write_tracking_start(void);
 void ram_write_tracking_stop(void);
 
+/* migration detached throttle */
+void migration_detached_throttle_setup(void);
+void migration_detached_throttle_cleanup(void);
+
 #endif
