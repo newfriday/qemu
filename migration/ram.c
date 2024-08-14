@@ -110,6 +110,15 @@
  */
 #define MAPPED_RAM_LOAD_BUF_SIZE 0x100000
 
+#define DETACH_THROTTLE_INTERVAL_SECOND 2
+
+bool detached_throttle = true;
+
+struct {
+    bool running;
+    QemuThread thread;
+} *detached_throttle_stat;
+
 XBZRLECacheStats xbzrle_counters;
 
 /* used by the search for pages to send */
@@ -1039,6 +1048,110 @@ static void migration_trigger_throttle(RAMState *rs)
             migration_dirty_limit_guest();
         }
     }
+}
+
+static bool migration_should_throttle(uint64_t bytes_dirty_new,
+                                      uint64_t bytes_xfer_new)
+{
+    static uint64_t dirty_ratio_pct_prev = 0;
+    uint64_t curr_dirty_ratio_pct;
+    uint64_t prev_dirty_ratio_pct;
+
+    if (!bytes_xfer_new)
+        return false;
+
+    curr_dirty_ratio_pct =
+        100 * (bytes_dirty_new * 1.0 / bytes_xfer_new);
+
+    prev_dirty_ratio_pct = dirty_ratio_pct_prev;
+    dirty_ratio_pct_prev = curr_dirty_ratio_pct;
+
+    trace_migration_dirty_ratio_pct(curr_dirty_ratio_pct, prev_dirty_ratio_pct);
+
+    if (prev_dirty_ratio_pct == 0 ||
+        (curr_dirty_ratio_pct <= migrate_throttle_trigger_threshold()))
+        return false;
+
+    return curr_dirty_ratio_pct >= prev_dirty_ratio_pct;
+}
+
+static void migration_sync_and_throttle(void)
+{
+    static uint64_t num_dirty_pages_prev = 0;
+    static uint64_t bytes_xfer_prev = 0;
+    uint64_t num_dirty_pages_new, bytes_dirty_pages_new;
+    uint64_t bytes_xfer_new, bytes_transferred;
+    uint64_t threshold, bytes_dirty_threshold;
+
+    /* fetch dirty bitmap from kvm */
+    memory_global_dirty_log_sync(false);
+
+    /* new dirty pages */
+    num_dirty_pages_new = total_dirty_pages - num_dirty_pages_prev;
+    num_dirty_pages_prev = total_dirty_pages;
+    bytes_dirty_pages_new = num_dirty_pages_new * TARGET_PAGE_SIZE;
+
+    /* transferred dirty pages */
+    bytes_transferred = migration_transferred_bytes();
+    bytes_xfer_new = bytes_transferred - bytes_xfer_prev;
+    bytes_xfer_prev = bytes_transferred;
+
+    /* threshold to trigger throttle */
+    threshold = migrate_throttle_trigger_threshold();
+    bytes_dirty_threshold = bytes_xfer_new * threshold / 100;
+
+    if ((bytes_dirty_pages_new > bytes_dirty_threshold) &&
+        (migration_should_throttle(bytes_dirty_pages_new, bytes_xfer_new))) {
+        if (migrate_auto_converge()) {
+            trace_migration_throttle();
+            mig_throttle_guest_down(bytes_dirty_pages_new,
+                                    bytes_dirty_threshold);
+        } else if (migrate_dirty_limit()) {
+            migration_dirty_limit_guest();
+        }
+    }
+}
+
+static void *migration_throttle_thread(void *opaque)
+{
+    rcu_register_thread();
+
+    while (qatomic_read(&detached_throttle_stat->running)) {
+        stat64_add(&mig_stats.dirty_sync_count, 1);
+        trace_migration_sync_and_throttle(stat64_get(&mig_stats.dirty_sync_count));
+        migration_sync_and_throttle();
+        sleep(DETACH_THROTTLE_INTERVAL_SECOND);
+    }
+
+    rcu_unregister_thread();
+
+    return NULL;
+}
+
+void migration_detached_throttle_setup(void)
+{
+    if (!detached_throttle)
+        return;
+
+    if (qatomic_read(&detached_throttle_stat->running)) {
+        return;
+    }
+
+    qatomic_set(&detached_throttle_stat->running, 1);
+    qemu_thread_create(&detached_throttle_stat->thread,
+                       "detached-throttle",
+                       migration_throttle_thread,
+                       NULL,
+                       QEMU_THREAD_JOINABLE);
+}
+
+void migration_detached_throttle_cleanup(void)
+{
+    if (!detached_throttle)
+        return;
+
+    qatomic_set(&detached_throttle_stat->running, 0);
+    qemu_thread_join(&detached_throttle_stat->thread);
 }
 
 static void migration_bitmap_sync(RAMState *rs, bool last_stage)
@@ -2375,12 +2488,14 @@ static void ram_save_cleanup(void *opaque)
          * no writing race against the migration bitmap
          */
         if (global_dirty_tracking & GLOBAL_DIRTY_MIGRATION) {
+            unsigned int flags =
+                detached_throttle ? GLOBAL_DIRTY_DIRTY_RATE : 0;
             /*
              * do not stop dirty log without starting it, since
              * memory_global_dirty_log_stop will assert that
              * memory_global_dirty_log_start/stop used in pairs
              */
-            memory_global_dirty_log_stop(GLOBAL_DIRTY_MIGRATION);
+            memory_global_dirty_log_stop(flags|GLOBAL_DIRTY_MIGRATION);
         }
     }
 
@@ -2772,6 +2887,7 @@ static void migration_bitmap_clear_discarded_pages(RAMState *rs)
 static bool ram_init_bitmaps(RAMState *rs, Error **errp)
 {
     bool ret = true;
+    unsigned int flags = detached_throttle ? GLOBAL_DIRTY_DIRTY_RATE : 0;
 
     qemu_mutex_lock_ramlist();
 
@@ -2779,7 +2895,7 @@ static bool ram_init_bitmaps(RAMState *rs, Error **errp)
         ram_list_init_bitmaps();
         /* We don't use dirty log with background snapshots */
         if (!migrate_background_snapshot()) {
-            ret = memory_global_dirty_log_start(GLOBAL_DIRTY_MIGRATION, errp);
+            ret = memory_global_dirty_log_start(flags | GLOBAL_DIRTY_MIGRATION, errp);
             if (!ret) {
                 goto out_unlock;
             }
