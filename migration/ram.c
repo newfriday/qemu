@@ -1041,6 +1041,46 @@ static void migration_trigger_throttle(RAMState *rs)
     }
 }
 
+uint64_t total_dirty_pages;
+
+static void *migration_throttle_thread(void *opaque)
+{
+    static uint64_t num_dirty_pages_last = 0;
+    uint64_t threshold = migrate_throttle_trigger_threshold();
+    uint64_t num_dirty_pages_new;
+    uint64_t bytes_dirty_pages_new;
+    uint64_t bytes_xfer_period;
+    uint64_t bytes_dirty_threshold;
+
+    RAMState *rs = opaque;
+
+	while (true) {
+        memory_global_dirty_log_sync(false);
+
+        num_dirty_pages_new = total_dirty_pages - num_dirty_pages_last
+        num_dirty_pages_last = total_dirty_pages;
+        bytes_dirty_pages_new = num_dirty_pages_new * TARGET_PAGE_SIZE;
+
+        bytes_xfer_period =
+            migration_transferred_bytes() - rs->bytes_xfer_prev;
+        bytes_dirty_threshold = bytes_xfer_period * threshold / 100;
+
+        if ((bytes_dirty_pages_new > bytes_dirty_threshold) &&
+            (++rs->dirty_rate_high_cnt >= 2)) {
+            rs->dirty_rate_high_cnt = 0;
+            if (migrate_auto_converge()) {
+                trace_migration_throttle();
+                mig_throttle_guest_down(bytes_dirty_period,
+                                        bytes_dirty_threshold);
+            } else if (migrate_dirty_limit()) {
+                migration_dirty_limit_guest();
+            }
+        }
+
+		break;
+	}
+}
+
 static void migration_bitmap_sync(RAMState *rs, bool last_stage)
 {
     RAMBlock *block;
@@ -1071,7 +1111,9 @@ static void migration_bitmap_sync(RAMState *rs, bool last_stage)
 
     /* more than 1 second = 1000 millisecons */
     if (end_time > rs->time_last_bitmap_sync + 1000) {
-        migration_trigger_throttle(rs);
+        if (!detached_throttle) {
+            migration_trigger_throttle(rs);
+        }
 
         migration_update_rates(rs, end_time);
 

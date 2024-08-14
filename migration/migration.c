@@ -72,6 +72,8 @@
 
 #define INMIGRATE_DEFAULT_EXIT_ON_ERROR true
 
+bool detached_throttle = true;
+
 static NotifierWithReturnList migration_state_notifiers[] = {
     NOTIFIER_ELEM_INIT(migration_state_notifiers, MIG_MODE_NORMAL),
     NOTIFIER_ELEM_INIT(migration_state_notifiers, MIG_MODE_CPR_REBOOT),
