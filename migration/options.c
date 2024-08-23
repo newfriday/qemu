@@ -44,6 +44,7 @@
 #define DEFAULT_MIGRATE_THROTTLE_TRIGGER_THRESHOLD 50
 #define DEFAULT_MIGRATE_CPU_THROTTLE_INITIAL 20
 #define DEFAULT_MIGRATE_CPU_THROTTLE_INCREMENT 10
+#define DEFAULT_MIGRATE_CPU_THROTTLE_INTERVAL 4
 #define DEFAULT_MIGRATE_MAX_CPU_THROTTLE 99
 
 /* Migration XBZRLE default cache size */
@@ -104,6 +105,11 @@ Property migration_properties[] = {
                       DEFAULT_MIGRATE_CPU_THROTTLE_INCREMENT),
     DEFINE_PROP_BOOL("x-cpu-throttle-tailslow", MigrationState,
                       parameters.cpu_throttle_tailslow, false),
+    DEFINE_PROP_BOOL("x-cpu-throttle-periodic", MigrationState,
+                      parameters.cpu_throttle_periodic, false),
+    DEFINE_PROP_UINT8("x-cpu-throttle-interval", MigrationState,
+                      parameters.cpu_throttle_interval,
+                      DEFAULT_MIGRATE_CPU_THROTTLE_INTERVAL),
     DEFINE_PROP_SIZE("x-max-bandwidth", MigrationState,
                       parameters.max_bandwidth, MAX_THROTTLE),
     DEFINE_PROP_SIZE("avail-switchover-bandwidth", MigrationState,
@@ -695,6 +701,20 @@ uint8_t migrate_cpu_throttle_initial(void)
     return s->parameters.cpu_throttle_initial;
 }
 
+uint8_t migrate_cpu_throttle_interval(void)
+{
+    MigrationState *s = migrate_get_current();
+
+    return s->parameters.cpu_throttle_interval;
+}
+
+bool migrate_cpu_throttle_periodic(void)
+{
+    MigrationState *s = migrate_get_current();
+
+    return s->parameters.cpu_throttle_periodic;
+}
+
 bool migrate_cpu_throttle_tailslow(void)
 {
     MigrationState *s = migrate_get_current();
@@ -874,6 +894,10 @@ MigrationParameters *qmp_query_migrate_parameters(Error **errp)
     params->cpu_throttle_increment = s->parameters.cpu_throttle_increment;
     params->has_cpu_throttle_tailslow = true;
     params->cpu_throttle_tailslow = s->parameters.cpu_throttle_tailslow;
+    params->has_cpu_throttle_periodic = true;
+    params->cpu_throttle_periodic = s->parameters.cpu_throttle_periodic;
+    params->has_cpu_throttle_interval = true;
+    params->cpu_throttle_interval = s->parameters.cpu_throttle_interval;
     params->tls_creds = g_strdup(s->parameters.tls_creds);
     params->tls_hostname = g_strdup(s->parameters.tls_hostname);
     params->tls_authz = g_strdup(s->parameters.tls_authz ?
@@ -940,6 +964,8 @@ void migrate_params_init(MigrationParameters *params)
     params->has_cpu_throttle_initial = true;
     params->has_cpu_throttle_increment = true;
     params->has_cpu_throttle_tailslow = true;
+    params->has_cpu_throttle_periodic = true;
+    params->has_cpu_throttle_interval = true;
     params->has_max_bandwidth = true;
     params->has_downtime_limit = true;
     params->has_x_checkpoint_delay = true;
@@ -993,6 +1019,15 @@ bool migrate_params_check(MigrationParameters *params, Error **errp)
         error_setg(errp, QERR_INVALID_PARAMETER_VALUE,
                    "cpu_throttle_increment",
                    "an integer in the range of 1 to 99");
+        return false;
+    }
+
+    if (params->has_cpu_throttle_interval &&
+        (params->cpu_throttle_interval < 1 ||
+         params->cpu_throttle_interval > 10)) {
+        error_setg(errp, QERR_INVALID_PARAMETER_VALUE,
+                   "cpu_throttle_interval",
+                   "an integer in the range of 1 to 10");
         return false;
     }
 
@@ -1163,6 +1198,14 @@ static void migrate_params_test_apply(MigrateSetParameters *params,
         dest->cpu_throttle_tailslow = params->cpu_throttle_tailslow;
     }
 
+    if (params->has_cpu_throttle_periodic) {
+        dest->cpu_throttle_periodic = params->cpu_throttle_periodic;
+    }
+
+    if (params->has_cpu_throttle_interval) {
+        dest->cpu_throttle_interval = params->cpu_throttle_interval;
+    }
+
     if (params->tls_creds) {
         assert(params->tls_creds->type == QTYPE_QSTRING);
         dest->tls_creds = params->tls_creds->u.s;
@@ -1269,6 +1312,14 @@ static void migrate_params_apply(MigrateSetParameters *params, Error **errp)
 
     if (params->has_cpu_throttle_tailslow) {
         s->parameters.cpu_throttle_tailslow = params->cpu_throttle_tailslow;
+    }
+
+    if (params->has_cpu_throttle_periodic) {
+        s->parameters.cpu_throttle_periodic = params->cpu_throttle_periodic;
+    }
+
+    if (params->has_cpu_throttle_interval) {
+        s->parameters.cpu_throttle_interval = params->cpu_throttle_interval;
     }
 
     if (params->tls_creds) {

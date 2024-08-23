@@ -264,6 +264,14 @@ void hmp_info_migrate_parameters(Monitor *mon, const QDict *qdict)
         monitor_printf(mon, "%s: %s\n",
             MigrationParameter_str(MIGRATION_PARAMETER_CPU_THROTTLE_TAILSLOW),
             params->cpu_throttle_tailslow ? "on" : "off");
+        assert(params->has_cpu_throttle_periodic);
+        monitor_printf(mon, "%s: %s\n",
+            MigrationParameter_str(MIGRATION_PARAMETER_CPU_THROTTLE_PERIODIC),
+            params->cpu_throttle_periodic ? "on" : "off");
+        assert(params->has_cpu_throttle_interval);
+        monitor_printf(mon, "%s: %u\n",
+            MigrationParameter_str(MIGRATION_PARAMETER_CPU_THROTTLE_INTERVAL),
+            params->cpu_throttle_interval);
         assert(params->has_max_cpu_throttle);
         monitor_printf(mon, "%s: %u\n",
             MigrationParameter_str(MIGRATION_PARAMETER_MAX_CPU_THROTTLE),
@@ -511,6 +519,14 @@ void hmp_migrate_set_parameter(Monitor *mon, const QDict *qdict)
     case MIGRATION_PARAMETER_CPU_THROTTLE_TAILSLOW:
         p->has_cpu_throttle_tailslow = true;
         visit_type_bool(v, param, &p->cpu_throttle_tailslow, &err);
+        break;
+    case MIGRATION_PARAMETER_CPU_THROTTLE_PERIODIC:
+        p->has_cpu_throttle_periodic = true;
+        visit_type_bool(v, param, &p->cpu_throttle_periodic, &err);
+        break;
+    case MIGRATION_PARAMETER_CPU_THROTTLE_INTERVAL:
+        p->has_cpu_throttle_interval = true;
+        visit_type_uint8(v, param, &p->cpu_throttle_interval, &err);
         break;
     case MIGRATION_PARAMETER_MAX_CPU_THROTTLE:
         p->has_max_cpu_throttle = true;
