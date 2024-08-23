@@ -913,10 +913,12 @@ bool ramblock_page_is_discarded(RAMBlock *rb, ram_addr_t start)
 }
 
 /* Called with RCU critical section */
-static void ramblock_sync_dirty_bitmap(RAMState *rs, RAMBlock *rb)
+static void ramblock_sync_dirty_bitmap(RAMState *rs,
+                                       RAMBlock *rb,
+                                       bool periodic)
 {
     uint64_t new_dirty_pages =
-        cpu_physical_memory_sync_dirty_bitmap(rb, 0, rb->used_length);
+        cpu_physical_memory_sync_dirty_bitmap(rb, 0, rb->used_length, periodic);
 
     rs->migration_dirty_pages += new_dirty_pages;
     rs->num_dirty_pages_period += new_dirty_pages;
@@ -1041,7 +1043,9 @@ static void migration_trigger_throttle(RAMState *rs)
     }
 }
 
-static void migration_bitmap_sync(RAMState *rs, bool last_stage)
+static void migration_bitmap_sync(RAMState *rs,
+                                  bool last_stage,
+                                  bool periodic)
 {
     RAMBlock *block;
     int64_t end_time;
@@ -1055,13 +1059,23 @@ static void migration_bitmap_sync(RAMState *rs, bool last_stage)
     trace_migration_bitmap_sync_start();
     memory_global_dirty_log_sync(last_stage);
 
-    WITH_QEMU_LOCK_GUARD(&rs->bitmap_mutex) {
-        WITH_RCU_READ_LOCK_GUARD() {
-            RAMBLOCK_FOREACH_NOT_IGNORED(block) {
-                ramblock_sync_dirty_bitmap(rs, block);
-            }
-            stat64_set(&mig_stats.dirty_bytes_last_sync, ram_bytes_remaining());
+    /*
+     * For periodic synchronization, RAMBlock bmap is read-only;
+     * avoid locking.
+     */
+    if (!periodic) {
+        qemu_mutex_lock(&rs->bitmap_mutex);
+    }
+
+    WITH_RCU_READ_LOCK_GUARD() {
+        RAMBLOCK_FOREACH_NOT_IGNORED(block) {
+            ramblock_sync_dirty_bitmap(rs, block, periodic);
         }
+        stat64_set(&mig_stats.dirty_bytes_last_sync, ram_bytes_remaining());
+    }
+
+    if (!periodic) {
+        qemu_mutex_unlock(&rs->bitmap_mutex);
     }
 
     memory_global_after_dirty_log_sync();
@@ -1101,7 +1115,7 @@ static void migration_bitmap_sync_precopy(RAMState *rs, bool last_stage)
         local_err = NULL;
     }
 
-    migration_bitmap_sync(rs, last_stage);
+    migration_bitmap_sync(rs, last_stage, false);
 
     if (precopy_notify(PRECOPY_NOTIFY_AFTER_BITMAP_SYNC, &local_err)) {
         error_report_err(local_err);
@@ -2362,6 +2376,8 @@ static void ram_bitmaps_destroy(void)
         block->bmap = NULL;
         g_free(block->file_bmap);
         block->file_bmap = NULL;
+        g_free(block->periodic_sync_bmap);
+        block->periodic_sync_bmap = NULL;
     }
 }
 
@@ -2589,7 +2605,7 @@ void ram_postcopy_send_discard_bitmap(MigrationState *ms)
     RCU_READ_LOCK_GUARD();
 
     /* This should be our last sync, the src is now paused */
-    migration_bitmap_sync(rs, false);
+    migration_bitmap_sync(rs, false, false);
 
     /* Easiest way to make sure we don't resume in the middle of a host-page */
     rs->pss[RAM_CHANNEL_PRECOPY].last_sent_block = NULL;
@@ -2749,6 +2765,9 @@ static void ram_list_init_bitmaps(void)
             bitmap_set(block->bmap, 0, pages);
             if (migrate_mapped_ram()) {
                 block->file_bmap = bitmap_new(pages);
+            }
+            if (migrate_cpu_throttle_periodic()) {
+                block->periodic_sync_bmap = bitmap_new(pages);
             }
             block->clear_bmap_shift = shift;
             block->clear_bmap = bitmap_new(clear_bmap_size(pages, shift));
@@ -3573,7 +3592,7 @@ void colo_incoming_start_dirty_log(void)
     memory_global_dirty_log_sync(false);
     WITH_RCU_READ_LOCK_GUARD() {
         RAMBLOCK_FOREACH_NOT_IGNORED(block) {
-            ramblock_sync_dirty_bitmap(ram_state, block);
+            ramblock_sync_dirty_bitmap(ram_state, block, false);
             /* Discard this dirty bitmap record */
             bitmap_zero(block->bmap, block->max_length >> TARGET_PAGE_BITS);
         }
@@ -3854,7 +3873,7 @@ void colo_flush_ram_cache(void)
     qemu_mutex_lock(&ram_state->bitmap_mutex);
     WITH_RCU_READ_LOCK_GUARD() {
         RAMBLOCK_FOREACH_NOT_IGNORED(block) {
-            ramblock_sync_dirty_bitmap(ram_state, block);
+            ramblock_sync_dirty_bitmap(ram_state, block, false);
         }
     }
 

@@ -89,6 +89,12 @@ struct RAMBlock {
      * could not have been valid on the source.
      */
     ram_addr_t postcopy_length;
+
+    /*
+     * Bitmap of dirty pages accumulated by periodic synchronization.
+     * Only used when periodic CPU throttling is enabled.
+     */
+    unsigned long *periodic_sync_bmap;
 };
 #endif
 #endif

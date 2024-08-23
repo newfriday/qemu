@@ -477,19 +477,25 @@ static inline void cpu_physical_memory_clear_dirty_range(ram_addr_t start,
 static inline
 uint64_t cpu_physical_memory_sync_dirty_bitmap(RAMBlock *rb,
                                                ram_addr_t start,
-                                               ram_addr_t length)
+                                               ram_addr_t length,
+                                               bool periodic)
 {
     ram_addr_t addr;
     unsigned long word = BIT_WORD((start + rb->offset) >> TARGET_PAGE_BITS);
     uint64_t num_dirty = 0;
     unsigned long *dest = rb->bmap;
+    unsigned long *periodic_sync_bmap = rb->periodic_sync_bmap;
+    int nr = BITS_TO_LONGS(length >> TARGET_PAGE_BITS);
+
+    if (periodic) {
+        assert(periodic_sync_bmap);
+    }
 
     /* start address and length is aligned at the start of a word? */
     if (((word * BITS_PER_LONG) << TARGET_PAGE_BITS) ==
          (start + rb->offset) &&
         !(length & ((BITS_PER_LONG << TARGET_PAGE_BITS) - 1))) {
         int k;
-        int nr = BITS_TO_LONGS(length >> TARGET_PAGE_BITS);
         unsigned long * const *src;
         unsigned long idx = (word * BITS_PER_LONG) / DIRTY_MEMORY_BLOCK_SIZE;
         unsigned long offset = BIT_WORD((word * BITS_PER_LONG) %
@@ -503,8 +509,8 @@ uint64_t cpu_physical_memory_sync_dirty_bitmap(RAMBlock *rb,
             if (src[idx][offset]) {
                 unsigned long bits = qatomic_xchg(&src[idx][offset], 0);
                 unsigned long new_dirty;
+                periodic_sync_bmap[k] |= bits;
                 new_dirty = ~dest[k];
-                dest[k] |= bits;
                 new_dirty &= bits;
                 num_dirty += ctpopl(new_dirty);
             }
@@ -518,7 +524,12 @@ uint64_t cpu_physical_memory_sync_dirty_bitmap(RAMBlock *rb,
             cpu_physical_memory_dirty_bits_cleared(start, length);
         }
 
-        if (rb->clear_bmap) {
+        /*
+         * Periodic synchronization requires dirty bitmap to be
+         * cleared immediately so that the dirty tracking get ready
+         * for the next period.
+         */
+        if (rb->clear_bmap && !periodic) {
             /*
              * Postpone the dirty bitmap clear to the point before we
              * really send the pages, also we will split the clear
@@ -539,11 +550,18 @@ uint64_t cpu_physical_memory_sync_dirty_bitmap(RAMBlock *rb,
                         TARGET_PAGE_SIZE,
                         DIRTY_MEMORY_MIGRATION)) {
                 long k = (start + addr) >> TARGET_PAGE_BITS;
-                if (!test_and_set_bit(k, dest)) {
+                if (!test_and_set_bit(k, periodic_sync_bmap)) {
                     num_dirty++;
                 }
             }
         }
+    }
+
+    if (!periodic) {
+        /* Just sync from the exsting periodic_sync_bmap directly
+         * and reset it with zero for the next iteration */
+        bitmap_copy(dest, periodic_sync_bmap, nr);
+        bitmap_set(periodic_sync_bmap, 0, nr);
     }
 
     return num_dirty;
