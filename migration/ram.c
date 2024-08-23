@@ -833,6 +833,7 @@ static inline bool migration_bitmap_clear_dirty(RAMState *rs,
     if (ret) {
         rs->migration_dirty_pages--;
     }
+    smp_mb();
 
     return ret;
 }

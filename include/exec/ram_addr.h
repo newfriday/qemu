@@ -483,9 +483,12 @@ uint64_t cpu_physical_memory_sync_dirty_bitmap(RAMBlock *rb,
     ram_addr_t addr;
     unsigned long word = BIT_WORD((start + rb->offset) >> TARGET_PAGE_BITS);
     uint64_t num_dirty = 0;
-    unsigned long *dest = rb->bmap;
+    unsigned long *dest = NULL;
     unsigned long *periodic_sync_bmap = rb->periodic_sync_bmap;
     int nr = BITS_TO_LONGS(length >> TARGET_PAGE_BITS);
+
+    smp_mb();
+    dest = rb->bmap;
 
     if (periodic) {
         assert(periodic_sync_bmap);
