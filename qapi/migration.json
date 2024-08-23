@@ -35,6 +35,8 @@
 # @dirty-sync-count: number of times that dirty ram was synchronized
 #     (since 2.1)
 #
+# @iteration-count: number of iteration of migration process (since 9.1)
+#
 # @postcopy-requests: The number of page requests received from the
 #     destination (since 2.7)
 #
@@ -68,6 +70,7 @@
            'normal': 'int',
            'normal-bytes': 'int', 'dirty-pages-rate': 'int',
            'mbps': 'number', 'dirty-sync-count': 'int',
+           'iteration-count': 'int',
            'postcopy-requests': 'int', 'page-size': 'int',
            'multifd-bytes': 'uint64', 'pages-per-second': 'uint64',
            'precopy-bytes': 'uint64', 'downtime-bytes': 'uint64',

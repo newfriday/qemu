@@ -1197,6 +1197,8 @@ static void populate_ram_info(MigrationInfo *info, MigrationState *s)
     info->ram->mbps = s->mbps;
     info->ram->dirty_sync_count =
         stat64_get(&mig_stats.dirty_sync_count);
+    info->ram->iteration_count =
+        stat64_get(&mig_stats.iteration_count);
     info->ram->dirty_sync_missed_zero_copy =
         stat64_get(&mig_stats.dirty_sync_missed_zero_copy);
     info->ram->postcopy_requests =
@@ -3275,6 +3277,8 @@ static MigIterateState migration_iteration_run(MigrationState *s)
         }
         return MIG_ITERATE_SKIP;
     }
+
+    stat64_add(&mig_stats.iteration_count, 1);
 
     /* Just another iteration step */
     qemu_savevm_state_iterate(s->to_dst_file, in_postcopy);
