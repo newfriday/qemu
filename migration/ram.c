@@ -414,6 +414,10 @@ struct RAMState {
      * RAM migration.
      */
     unsigned int postcopy_bmap_sync_requested;
+
+    /* periodic throttle information */
+    bool throttle_running;
+    QemuThread throttle_thread;
 };
 typedef struct RAMState RAMState;
 
@@ -921,8 +925,16 @@ static void ramblock_sync_dirty_bitmap(RAMState *rs,
     uint64_t new_dirty_pages =
         cpu_physical_memory_sync_dirty_bitmap(rb, 0, rb->used_length, periodic);
 
+    if (periodic) {
+        /*
+         * Backend synchronization is not for an iteration and the new
+         * dirty pages is used to detect convergence only. So do not
+         * update the dirty pages about to be migrated.
+         */
+        rs->num_dirty_pages_period += new_dirty_pages;
+        return;
+    }
     rs->migration_dirty_pages += new_dirty_pages;
-    rs->num_dirty_pages_period += new_dirty_pages;
 }
 
 /**
@@ -1103,6 +1115,60 @@ static void migration_bitmap_sync(RAMState *rs,
     }
 }
 
+/*
+ * Trigger periodic throttle after transferring certain memory size in
+ * case of useless synchronization of dirty bitmap
+ * TODO: Make this a migration parameter ?
+ */
+#define PERIODIC_THROTTLE_TRIGGER_SIZE  (400 * 1024 * 1024)
+
+static bool periodic_throttle_in_service(RAMState *rs)
+{
+    return qatomic_read(&rs->throttle_running);
+}
+
+static void *periodic_throttle_thread(void *opaque)
+{
+    RAMState *rs = opaque;
+    int interval = migrate_cpu_throttle_interval();
+    uint64_t transferred_bytes = migration_transferred_bytes();
+
+    rcu_register_thread();
+    while (qatomic_read(&rs->throttle_running)) {
+        if (transferred_bytes < PERIODIC_THROTTLE_TRIGGER_SIZE) {
+            continue;
+        }
+        trace_migration_periodic_throttle();
+        migration_bitmap_sync(rs, false, true);
+        sleep(interval);
+    }
+    rcu_unregister_thread();
+
+    return NULL;
+}
+
+static void periodic_throttle_start(RAMState *rs)
+{
+    if (qatomic_read(&rs->throttle_running)) {
+        return;
+    }
+
+    qatomic_set(&rs->throttle_running, 1);
+    qemu_thread_create(&rs->throttle_thread,
+                       NULL, periodic_throttle_thread,
+                       rs, QEMU_THREAD_JOINABLE);
+}
+
+static void periodic_throttle_stop(RAMState *rs)
+{
+    if (!qatomic_read(&rs->throttle_running)) {
+        return;
+    }
+
+    qatomic_set(&rs->throttle_running, 0);
+    qemu_thread_join(&rs->throttle_thread);
+}
+
 static void migration_bitmap_sync_precopy(RAMState *rs, bool last_stage)
 {
     Error *local_err = NULL;
@@ -1114,6 +1180,12 @@ static void migration_bitmap_sync_precopy(RAMState *rs, bool last_stage)
     if (precopy_notify(PRECOPY_NOTIFY_BEFORE_BITMAP_SYNC, &local_err)) {
         error_report_err(local_err);
         local_err = NULL;
+    }
+
+    /* Start throttle thread if needed */
+    if (migrate_cpu_throttle_periodic() &&
+        (!periodic_throttle_in_service(rs))) {
+        periodic_throttle_start(rs);
     }
 
     migration_bitmap_sync(rs, last_stage, false);
@@ -2392,6 +2464,9 @@ static void ram_save_cleanup(void *opaque)
          * no writing race against the migration bitmap
          */
         if (global_dirty_tracking & GLOBAL_DIRTY_MIGRATION) {
+            if (migrate_cpu_throttle_periodic()) {
+                periodic_throttle_stop(*rsp);
+            }
             /*
              * do not stop dirty log without starting it, since
              * memory_global_dirty_log_stop will assert that
