@@ -724,6 +724,12 @@
 #     be excessive at tail stage.  The default value is false.  (Since
 #     5.1)
 #
+# @cpu-throttle-periodic: Make CPU throttling periodically.
+#     (Since 9.1)
+#
+# @cpu-throttle-interval: Interval of the periodic CPU throttling.
+#     (Since 9.1)
+#
 # @tls-creds: ID of the 'tls-creds' object that provides credentials
 #     for establishing a TLS connection over the migration data
 #     channel.  On the outgoing side of the migration, the credentials
@@ -844,7 +850,8 @@
            'announce-rounds', 'announce-step',
            'throttle-trigger-threshold',
            'cpu-throttle-initial', 'cpu-throttle-increment',
-           'cpu-throttle-tailslow',
+           'cpu-throttle-tailslow', 'cpu-throttle-periodic',
+           'cpu-throttle-interval',
            'tls-creds', 'tls-hostname', 'tls-authz', 'max-bandwidth',
            'avail-switchover-bandwidth', 'downtime-limit',
            { 'name': 'x-checkpoint-delay', 'features': [ 'unstable' ] },
@@ -898,6 +905,12 @@
 #     traditional throttling, meanwhile the throttle increment won't
 #     be excessive at tail stage.  The default value is false.  (Since
 #     5.1)
+#
+# @cpu-throttle-periodic: Make CPU throttling periodically.
+#     (Since 9.1)
+#
+# @cpu-throttle-interval: Interval of the periodic CPU throttling.
+#     (Since 9.1)
 #
 # @tls-creds: ID of the 'tls-creds' object that provides credentials
 #     for establishing a TLS connection over the migration data
@@ -1026,6 +1039,8 @@
             '*cpu-throttle-initial': 'uint8',
             '*cpu-throttle-increment': 'uint8',
             '*cpu-throttle-tailslow': 'bool',
+            '*cpu-throttle-periodic': 'bool',
+            '*cpu-throttle-interval': 'uint8',
             '*tls-creds': 'StrOrNull',
             '*tls-hostname': 'StrOrNull',
             '*tls-authz': 'StrOrNull',
@@ -1106,6 +1121,12 @@
 #     traditional throttling, meanwhile the throttle increment won't
 #     be excessive at tail stage.  The default value is false.  (Since
 #     5.1)
+#
+# @cpu-throttle-periodic: Make CPU throttling periodically.
+#     (Since 9.1)
+#
+# @cpu-throttle-interval: Interval of the periodic CPU throttling.
+#     (Since 9.1)
 #
 # @tls-creds: ID of the 'tls-creds' object that provides credentials
 #     for establishing a TLS connection over the migration data
@@ -1227,6 +1248,8 @@
             '*cpu-throttle-initial': 'uint8',
             '*cpu-throttle-increment': 'uint8',
             '*cpu-throttle-tailslow': 'bool',
+            '*cpu-throttle-periodic': 'bool',
+            '*cpu-throttle-interval': 'uint8',
             '*tls-creds': 'str',
             '*tls-hostname': 'str',
             '*tls-authz': 'str',
