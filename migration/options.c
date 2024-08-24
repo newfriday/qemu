@@ -724,6 +724,13 @@ bool migrate_cpu_throttle_tailslow(void)
     return s->parameters.cpu_throttle_tailslow;
 }
 
+bool migrate_cpu_throttle_timely(void)
+{
+    MigrationState *s = migrate_get_current();
+
+    return s->parameters.cpu_throttle_timely;
+}
+
 bool migrate_direct_io(void)
 {
     MigrationState *s = migrate_get_current();

@@ -418,6 +418,12 @@ struct RAMState {
     /* periodic throttle information */
     bool throttle_running;
     QemuThread throttle_thread;
+
+    /*
+     * Ratio of bytes_dirty_period and bytes_xfer_period in the last
+     * iteration
+     */
+    uint64_t dirty_ratio_pct;
 };
 typedef struct RAMState RAMState;
 
@@ -1028,6 +1034,32 @@ static void migration_dirty_limit_guest(void)
     trace_migration_dirty_limit_guest(quota_dirtyrate);
 }
 
+static bool migration_dirty_ratio_high(RAMState *rs)
+{
+    uint64_t threshold = migrate_throttle_trigger_threshold();
+    uint64_t bytes_xfer_period =
+        migration_transferred_bytes() - rs->bytes_xfer_prev;
+    uint64_t bytes_dirty_period = rs->num_dirty_pages_period * TARGET_PAGE_SIZE;
+    uint64_t prev, curr;
+
+    /* Calculate the dirty ratio percentage */
+    curr = 100 * (bytes_dirty_period * 1.0 / bytes_xfer_period);
+
+    prev = rs->dirty_ratio_pct;
+    rs->dirty_ratio_pct = curr;
+
+    if (prev == 0) {
+        return false;
+    }
+
+    trace_dirty_ratio_pct(curr, prev);
+    /*
+     * If current dirty ratio is greater than previouse, determine
+     * that the migration do not converge.
+     */
+    return curr > threshold && curr >= prev;
+}
+
 static void migration_trigger_throttle(RAMState *rs)
 {
     uint64_t threshold = migrate_throttle_trigger_threshold();
@@ -1035,6 +1067,11 @@ static void migration_trigger_throttle(RAMState *rs)
         migration_transferred_bytes() - rs->bytes_xfer_prev;
     uint64_t bytes_dirty_period = rs->num_dirty_pages_period * TARGET_PAGE_SIZE;
     uint64_t bytes_dirty_threshold = bytes_xfer_period * threshold / 100;
+    bool dirty_ratio_high = false;
+
+    if ((bytes_xfer_period != 0) && migrate_cpu_throttle_timely()) {
+        dirty_ratio_high = migration_dirty_ratio_high(rs);
+    }
 
     /*
      * The following detection logic can be refined later. For now:
@@ -1044,8 +1081,9 @@ static void migration_trigger_throttle(RAMState *rs)
      * twice, start or increase throttling.
      */
     if ((bytes_dirty_period > bytes_dirty_threshold) &&
-        (++rs->dirty_rate_high_cnt >= 2)) {
-        rs->dirty_rate_high_cnt = 0;
+        ((++rs->dirty_rate_high_cnt >= 2) || dirty_ratio_high)) {
+        rs->dirty_rate_high_cnt =
+            rs->dirty_rate_high_cnt > 2 ? 0 : rs->dirty_rate_high_cnt;
         if (migrate_auto_converge()) {
             trace_migration_throttle();
             mig_throttle_guest_down(bytes_dirty_period,
