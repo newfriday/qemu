@@ -733,6 +733,10 @@
 # @cpu-throttle-interval: Interval of the periodic CPU throttling.
 #     (Since 9.1)
 #
+# @cpu-throttle-timely: Make CPU throttling more timely by introduce
+#     an extra detection policy of migration convergence.
+#     (Since 9.1)
+#
 # @tls-creds: ID of the 'tls-creds' object that provides credentials
 #     for establishing a TLS connection over the migration data
 #     channel.  On the outgoing side of the migration, the credentials
@@ -854,7 +858,7 @@
            'throttle-trigger-threshold',
            'cpu-throttle-initial', 'cpu-throttle-increment',
            'cpu-throttle-tailslow', 'cpu-throttle-periodic',
-           'cpu-throttle-interval',
+           'cpu-throttle-interval', 'cpu-throttle-timely',
            'tls-creds', 'tls-hostname', 'tls-authz', 'max-bandwidth',
            'avail-switchover-bandwidth', 'downtime-limit',
            { 'name': 'x-checkpoint-delay', 'features': [ 'unstable' ] },
@@ -913,6 +917,10 @@
 #     (Since 9.1)
 #
 # @cpu-throttle-interval: Interval of the periodic CPU throttling.
+#     (Since 9.1)
+#
+# @cpu-throttle-timely: Make CPU throttling more timely by introduce
+#     an extra detection policy of migration convergence.
 #     (Since 9.1)
 #
 # @tls-creds: ID of the 'tls-creds' object that provides credentials
@@ -1044,6 +1052,7 @@
             '*cpu-throttle-tailslow': 'bool',
             '*cpu-throttle-periodic': 'bool',
             '*cpu-throttle-interval': 'uint8',
+            '*cpu-throttle-timely': 'bool',
             '*tls-creds': 'StrOrNull',
             '*tls-hostname': 'StrOrNull',
             '*tls-authz': 'StrOrNull',
@@ -1129,6 +1138,10 @@
 #     (Since 9.1)
 #
 # @cpu-throttle-interval: Interval of the periodic CPU throttling.
+#     (Since 9.1)
+#
+# @cpu-throttle-timely: Make CPU throttling more timely by introduce
+#     an extra detection policy of migration convergence.
 #     (Since 9.1)
 #
 # @tls-creds: ID of the 'tls-creds' object that provides credentials
@@ -1253,6 +1266,7 @@
             '*cpu-throttle-tailslow': 'bool',
             '*cpu-throttle-periodic': 'bool',
             '*cpu-throttle-interval': 'uint8',
+            '*cpu-throttle-timely': 'bool',
             '*tls-creds': 'str',
             '*tls-hostname': 'str',
             '*tls-authz': 'str',

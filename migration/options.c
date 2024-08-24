@@ -110,6 +110,8 @@ Property migration_properties[] = {
     DEFINE_PROP_UINT8("x-cpu-throttle-interval", MigrationState,
                       parameters.cpu_throttle_interval,
                       DEFAULT_MIGRATE_CPU_THROTTLE_INTERVAL),
+    DEFINE_PROP_BOOL("x-cpu-throttle-timely", MigrationState,
+                      parameters.cpu_throttle_timely, false),
     DEFINE_PROP_SIZE("x-max-bandwidth", MigrationState,
                       parameters.max_bandwidth, MAX_THROTTLE),
     DEFINE_PROP_SIZE("avail-switchover-bandwidth", MigrationState,
@@ -898,6 +900,8 @@ MigrationParameters *qmp_query_migrate_parameters(Error **errp)
     params->cpu_throttle_periodic = s->parameters.cpu_throttle_periodic;
     params->has_cpu_throttle_interval = true;
     params->cpu_throttle_interval = s->parameters.cpu_throttle_interval;
+    params->has_cpu_throttle_timely = true;
+    params->cpu_throttle_timely = s->parameters.cpu_throttle_timely;
     params->tls_creds = g_strdup(s->parameters.tls_creds);
     params->tls_hostname = g_strdup(s->parameters.tls_hostname);
     params->tls_authz = g_strdup(s->parameters.tls_authz ?
@@ -966,6 +970,7 @@ void migrate_params_init(MigrationParameters *params)
     params->has_cpu_throttle_tailslow = true;
     params->has_cpu_throttle_periodic = true;
     params->has_cpu_throttle_interval = true;
+    params->has_cpu_throttle_timely= true;
     params->has_max_bandwidth = true;
     params->has_downtime_limit = true;
     params->has_x_checkpoint_delay = true;
@@ -1206,6 +1211,10 @@ static void migrate_params_test_apply(MigrateSetParameters *params,
         dest->cpu_throttle_interval = params->cpu_throttle_interval;
     }
 
+    if (params->has_cpu_throttle_timely) {
+        dest->cpu_throttle_timely = params->cpu_throttle_timely;
+    }
+
     if (params->tls_creds) {
         assert(params->tls_creds->type == QTYPE_QSTRING);
         dest->tls_creds = params->tls_creds->u.s;
@@ -1320,6 +1329,10 @@ static void migrate_params_apply(MigrateSetParameters *params, Error **errp)
 
     if (params->has_cpu_throttle_interval) {
         s->parameters.cpu_throttle_interval = params->cpu_throttle_interval;
+    }
+
+    if (params->has_cpu_throttle_timely) {
+        s->parameters.cpu_throttle_timely= params->cpu_throttle_timely;
     }
 
     if (params->tls_creds) {
