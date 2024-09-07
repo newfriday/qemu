@@ -1072,6 +1072,10 @@ static void migration_bitmap_sync(RAMState *rs,
     RAMBlock *block;
     int64_t end_time;
 
+    if (!periodic) {
+        stat64_add(&mig_stats.iterations, 1);
+    }
+
     stat64_add(&mig_stats.dirty_sync_count, 1);
 
     if (!rs->time_last_bitmap_sync) {
