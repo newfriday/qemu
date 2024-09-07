@@ -24,6 +24,30 @@
 #include "qemu/rcu.h"
 #include "exec/ramlist.h"
 
+/* Possible bits for cpu_physical_memory_sync_dirty_bitmap */
+
+/*
+ * The old-fashioned sync, which is, in turn, used for CPU
+ * throttle and memory transfer.
+ */
+#define RAMBLOCK_SYN_LEGACY_ITER   (1U << 0)
+
+/*
+ * The modern sync, which is, in turn, used for CPU throttle
+ * and memory transfer.
+ */
+#define RAMBLOCK_SYN_MODERN_ITER   (1U << 1)
+
+/* The modern sync, which is used for CPU throttle only */
+#define RAMBLOCK_SYN_MODERN_BACKGROUND    (1U << 2)
+
+#define RAMBLOCK_SYN_MASK  (0x7)
+
+typedef enum RAMBlockSynMode {
+    RAMBLOCK_SYN_LEGACY, /* Old-fashined mode */
+    RAMBLOCK_SYN_MODERN, /* Background-sync-supported mode */
+} RAMBlockSynMode;
+
 struct RAMBlock {
     struct rcu_head rcu;
     struct MemoryRegion *mr;
@@ -89,6 +113,27 @@ struct RAMBlock {
      * could not have been valid on the source.
      */
     ram_addr_t postcopy_length;
+
+    /*
+     * Used to backup the bmap during background sync to see whether any dirty
+     * pages were sent during that time.
+     */
+    unsigned long *shadow_bmap;
+
+    /*
+     * The bitmap "bmap," which was initially used for both sync and memory
+     * transfer, will be replaced by two bitmaps: the previously used "bmap"
+     * and the recently added "iter_bmap." Only the memory transfer is
+     * conducted with the previously used "bmap"; the recently added
+     * "iter_bmap" is utilized for dirty bitmap sync.
+     */
+    unsigned long *iter_bmap;
+
+    /* Number of new dirty pages during iteration */
+    uint64_t iter_dirty_pages;
+
+    /* If background sync has shown up during iteration */
+    bool background_sync_shown_up;
 };
 #endif
 #endif
