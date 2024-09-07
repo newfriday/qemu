@@ -278,7 +278,7 @@ static int64_t read_migrate_property_int(QTestState *who, const char *property)
 
 static uint64_t get_migration_pass(QTestState *who)
 {
-    return read_ram_property_int(who, "dirty-sync-count");
+    return read_ram_property_int(who, "iteration-count");
 }
 
 static void read_blocktime(QTestState *who)
