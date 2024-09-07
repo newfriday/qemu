@@ -416,6 +416,10 @@ struct RAMState {
      * RAM migration.
      */
     unsigned int postcopy_bmap_sync_requested;
+
+    /* Periodic throttle information */
+    bool throttle_running;
+    QemuThread throttle_thread;
 };
 typedef struct RAMState RAMState;
 
@@ -1116,6 +1120,82 @@ static void migration_bitmap_sync(RAMState *rs,
         uint64_t generation = stat64_get(&mig_stats.dirty_sync_count);
         qapi_event_send_migration_pass(generation);
     }
+}
+
+#define PERIODIC_THROTTLE_SLEEP_DURATION    1
+
+static void *periodic_throttle_thread(void *opaque)
+{
+    RAMState *rs = opaque;
+
+    rcu_register_thread();
+
+    while (qatomic_read(&rs->throttle_running)) {
+        /*
+         * The first iteration copies all memory anyhow and has no
+         * effect on guest performance, therefore omit it to avoid
+         * paying extra for the sync penalty.
+         */
+        if (stat64_get(&mig_stats.iterations) <= 1) {
+            continue;
+        }
+
+        bql_lock();
+        trace_migration_periodic_throttle();
+        WITH_RCU_READ_LOCK_GUARD() {
+            migration_bitmap_sync(rs, false, true);
+        }
+        bql_unlock();
+        sleep(PERIODIC_THROTTLE_SLEEP_DURATION);
+    }
+
+    rcu_unregister_thread();
+
+    return NULL;
+}
+
+void periodic_throttle_start(void)
+{
+    RAMState *rs = ram_state;
+
+    if (!rs) {
+        return;
+    }
+
+    if (qatomic_read(&rs->throttle_running)) {
+        return;
+    }
+
+    trace_migration_periodic_throttle_start();
+
+    qatomic_set(&rs->throttle_running, 1);
+    qemu_thread_create(&rs->throttle_thread,
+                       NULL, periodic_throttle_thread,
+                       rs, QEMU_THREAD_JOINABLE);
+}
+
+void periodic_throttle_stop(void)
+{
+    RAMState *rs = ram_state;
+
+    if (!rs) {
+        return;
+    }
+
+    if (!qatomic_read(&rs->throttle_running)) {
+        return;
+    }
+
+    trace_migration_periodic_throttle_stop();
+
+    qatomic_set(&rs->throttle_running, 0);
+    qemu_thread_join(&rs->throttle_thread);
+}
+
+void periodic_throttle_setup(bool enable)
+{
+    sync_mode =
+        enable ? RAMBLOCK_SYN_MODE_PERIOD : RAMBLOCK_SYN_MODE_LEGACY;
 }
 
 static void migration_bitmap_sync_precopy(RAMState *rs, bool last_stage)

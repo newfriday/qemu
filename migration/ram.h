@@ -93,4 +93,8 @@ void ram_write_tracking_prepare(void);
 int ram_write_tracking_start(void);
 void ram_write_tracking_stop(void);
 
+/* Periodic throttle */
+void periodic_throttle_setup(bool enable);
+void periodic_throttle_start(void);
+void periodic_throttle_stop(void);
 #endif
