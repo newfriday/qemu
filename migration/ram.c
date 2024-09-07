@@ -112,6 +112,8 @@
 
 XBZRLECacheStats xbzrle_counters;
 
+static RAMBlockSynMode sync_mode = RAMBLOCK_SYN_LEGACY;
+
 /* used by the search for pages to send */
 struct PageSearchStatus {
     /* The migration channel used for a specific host page */
@@ -912,13 +914,38 @@ bool ramblock_page_is_discarded(RAMBlock *rb, ram_addr_t start)
     return false;
 }
 
-/* Called with RCU critical section */
-static void ramblock_sync_dirty_bitmap(RAMState *rs, RAMBlock *rb)
+static void ramblock_reset_iter_stats(RAMBlock *rb)
 {
-    uint64_t new_dirty_pages =
-        cpu_physical_memory_sync_dirty_bitmap(rb, 0, rb->used_length);
+    bitmap_clear(rb->shadow_bmap, 0, rb->used_length >> TARGET_PAGE_BITS);
+    bitmap_clear(rb->iter_bmap, 0, rb->used_length >> TARGET_PAGE_BITS);
+    rb->iter_dirty_pages = 0;
+    rb->periodic_sync_shown_up = false;
+}
 
-    rs->migration_dirty_pages += new_dirty_pages;
+/* Called with RCU critical section */
+static void ramblock_sync_dirty_bitmap(RAMState *rs,
+                                       RAMBlock *rb,
+                                       bool periodic)
+{
+    uint64_t new_dirty_pages;
+    unsigned int flag = RAMBLOCK_SYN_LEGACY_ITER;
+
+    if (sync_mode == RAMBLOCK_SYN_MODERN) {
+        flag = periodic ? RAMBLOCK_SYN_MODERN_PERIOD : RAMBLOCK_SYN_MODERN_ITER;
+    }
+
+    new_dirty_pages =
+        cpu_physical_memory_sync_dirty_bitmap(rb, 0, rb->used_length, flag);
+
+    if (flag & (RAMBLOCK_SYN_LEGACY_ITER | RAMBLOCK_SYN_MODERN_ITER)) {
+        if (flag == RAMBLOCK_SYN_LEGACY_ITER) {
+            rs->migration_dirty_pages += new_dirty_pages;
+        } else {
+            rs->migration_dirty_pages += rb->iter_dirty_pages;
+            ramblock_reset_iter_stats(rb);
+        }
+    }
+
     rs->num_dirty_pages_period += new_dirty_pages;
 }
 
@@ -1041,7 +1068,9 @@ static void migration_trigger_throttle(RAMState *rs)
     }
 }
 
-static void migration_bitmap_sync(RAMState *rs, bool last_stage)
+static void migration_bitmap_sync(RAMState *rs,
+                                  bool last_stage,
+                                  bool periodic)
 {
     RAMBlock *block;
     int64_t end_time;
@@ -1058,7 +1087,7 @@ static void migration_bitmap_sync(RAMState *rs, bool last_stage)
     WITH_QEMU_LOCK_GUARD(&rs->bitmap_mutex) {
         WITH_RCU_READ_LOCK_GUARD() {
             RAMBLOCK_FOREACH_NOT_IGNORED(block) {
-                ramblock_sync_dirty_bitmap(rs, block);
+                ramblock_sync_dirty_bitmap(rs, block, periodic);
             }
             stat64_set(&mig_stats.dirty_bytes_last_sync, ram_bytes_remaining());
         }
@@ -1101,7 +1130,7 @@ static void migration_bitmap_sync_precopy(RAMState *rs, bool last_stage)
         local_err = NULL;
     }
 
-    migration_bitmap_sync(rs, last_stage);
+    migration_bitmap_sync(rs, last_stage, false);
 
     if (precopy_notify(PRECOPY_NOTIFY_AFTER_BITMAP_SYNC, &local_err)) {
         error_report_err(local_err);
@@ -2594,7 +2623,7 @@ void ram_postcopy_send_discard_bitmap(MigrationState *ms)
     RCU_READ_LOCK_GUARD();
 
     /* This should be our last sync, the src is now paused */
-    migration_bitmap_sync(rs, false);
+    migration_bitmap_sync(rs, false, false);
 
     /* Easiest way to make sure we don't resume in the middle of a host-page */
     rs->pss[RAM_CHANNEL_PRECOPY].last_sent_block = NULL;
@@ -3581,7 +3610,7 @@ void colo_incoming_start_dirty_log(void)
     memory_global_dirty_log_sync(false);
     WITH_RCU_READ_LOCK_GUARD() {
         RAMBLOCK_FOREACH_NOT_IGNORED(block) {
-            ramblock_sync_dirty_bitmap(ram_state, block);
+            ramblock_sync_dirty_bitmap(ram_state, block, false);
             /* Discard this dirty bitmap record */
             bitmap_zero(block->bmap, block->max_length >> TARGET_PAGE_BITS);
         }
@@ -3862,7 +3891,7 @@ void colo_flush_ram_cache(void)
     qemu_mutex_lock(&ram_state->bitmap_mutex);
     WITH_RCU_READ_LOCK_GUARD() {
         RAMBLOCK_FOREACH_NOT_IGNORED(block) {
-            ramblock_sync_dirty_bitmap(ram_state, block);
+            ramblock_sync_dirty_bitmap(ram_state, block, false);
         }
     }
 
