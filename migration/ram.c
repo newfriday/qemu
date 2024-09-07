@@ -2362,6 +2362,10 @@ static void ram_bitmaps_destroy(void)
         block->bmap = NULL;
         g_free(block->file_bmap);
         block->file_bmap = NULL;
+        g_free(block->shadow_bmap);
+        block->shadow_bmap = NULL;
+        g_free(block->iter_bmap);
+        block->iter_bmap = NULL;
     }
 }
 
@@ -2752,6 +2756,8 @@ static void ram_list_init_bitmaps(void)
             }
             block->clear_bmap_shift = shift;
             block->clear_bmap = bitmap_new(clear_bmap_size(pages, shift));
+            block->shadow_bmap = bitmap_new(pages);
+            block->iter_bmap = bitmap_new(pages);
         }
     }
 }

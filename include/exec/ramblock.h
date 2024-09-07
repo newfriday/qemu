@@ -24,6 +24,26 @@
 #include "qemu/rcu.h"
 #include "exec/ramlist.h"
 
+/* Possible bits for migration_bitmap_sync */
+
+/* Bitmap sync used for both iteration and throttle */
+#define RAMBLOCK_BMAP_SYN_COMBINATION   (1U << 0)
+
+/* Bitmap sync used for iteration */
+#define RAMBLOCK_BMAP_SYN_ITER          (1U << 1)
+
+/* Bitmap sync used for throttle */
+#define RAMBLOCK_BMAP_SYN_PERIOD        (1U << 2)
+
+#define RAMBLOCK_BMAP_SYN_MASK  (0x7)
+
+typedef enum RAMBlockSynMode {
+    /* Mode supporting throttle along with iteration only  */
+    RAMBLOCK_SYN_MODE_LEGACY,
+    /* Mode supporting periodic throttle */
+    RAMBLOCK_SYN_MODE_PERIOD,
+} RAMBlockSynMode;
+
 struct RAMBlock {
     struct rcu_head rcu;
     struct MemoryRegion *mr;
@@ -89,6 +109,22 @@ struct RAMBlock {
      * could not have been valid on the source.
      */
     ram_addr_t postcopy_length;
+
+    /*
+     * Used for backing up bmap during periodic sync in order to check if
+     * dirty pages has been sent during a period.
+     */
+    unsigned long *shadow_bmap;
+
+    /*
+     * The bmap field above was use for both sending and synchronization
+     * orignally, this will be splited in two, the bmap is used for sending and
+     * and the iter_bmap used for synchronization.
+     */
+    unsigned long *iter_bmap;
+
+    /* Number of new of dirty pages during iteration */
+    uint64_t iter_dirty_pages;
 };
 #endif
 #endif
