@@ -472,17 +472,68 @@ static inline void cpu_physical_memory_clear_dirty_range(ram_addr_t start,
     cpu_physical_memory_test_and_clear_dirty(start, length, DIRTY_MEMORY_CODE);
 }
 
+static void ramblock_clear_iter_bmap(RAMBlock *rb,
+                                     ram_addr_t start,
+                                     ram_addr_t length)
+{
+    ram_addr_t addr;
+    unsigned long *bmap = rb->bmap;
+    unsigned long *shadow_bmap = rb->shadow_bmap;
+    unsigned long *iter_bmap = rb->iter_bmap;
+
+    for (addr = 0; addr < length; addr += TARGET_PAGE_SIZE) {
+        long k = (start + addr) >> TARGET_PAGE_BITS;
+        if (test_bit(k, shadow_bmap) && !test_bit(k, bmap)) {
+            /* Page has been sent, clear the iter bmap */
+            clear_bit(k, iter_bmap);
+        }
+    }
+}
+
+static void ramblock_update_iter_bmap(RAMBlock *rb,
+                                      ram_addr_t start,
+                                      ram_addr_t length)
+{
+    ram_addr_t addr;
+    unsigned long *bmap = rb->bmap;
+    unsigned long *iter_bmap = rb->iter_bmap;
+
+    for (addr = 0; addr < length; addr += TARGET_PAGE_SIZE) {
+        long k = (start + addr) >> TARGET_PAGE_BITS;
+        if (test_bit(k, iter_bmap)) {
+            if (!test_bit(k, bmap)) {
+                set_bit(k, bmap);
+                rb->iter_dirty_pages++;
+            }
+        }
+    }
+}
 
 /* Called with RCU critical section */
 static inline
 uint64_t cpu_physical_memory_sync_dirty_bitmap(RAMBlock *rb,
                                                ram_addr_t start,
-                                               ram_addr_t length)
+                                               ram_addr_t length,
+                                               unsigned int flag)
 {
     ram_addr_t addr;
     unsigned long word = BIT_WORD((start + rb->offset) >> TARGET_PAGE_BITS);
     uint64_t num_dirty = 0;
     unsigned long *dest = rb->bmap;
+    unsigned long *shadow_bmap = rb->shadow_bmap;
+    unsigned long *iter_bmap = rb->iter_bmap;
+
+    assert(flag && !(flag & (~RAMBLOCK_SYN_MASK)));
+
+    /*
+     * We must remove the sent dirty page from the iter_bmap in order to
+     * minimize redundant page transfers if background sync has appeared
+     * during this iteration.
+     */
+    if (rb->background_sync_shown_up &&
+        (flag & (RAMBLOCK_SYN_MODERN_ITER | RAMBLOCK_SYN_MODERN_BACKGROUND))) {
+        ramblock_clear_iter_bmap(rb, start, length);
+    }
 
     /* start address and length is aligned at the start of a word? */
     if (((word * BITS_PER_LONG) << TARGET_PAGE_BITS) ==
@@ -503,8 +554,20 @@ uint64_t cpu_physical_memory_sync_dirty_bitmap(RAMBlock *rb,
             if (src[idx][offset]) {
                 unsigned long bits = qatomic_xchg(&src[idx][offset], 0);
                 unsigned long new_dirty;
+                if (flag & (RAMBLOCK_SYN_MODERN_ITER |
+                            RAMBLOCK_SYN_MODERN_BACKGROUND)) {
+                    /* Back-up bmap for the next iteration */
+                    iter_bmap[k] |= bits;
+                    if (flag == RAMBLOCK_SYN_MODERN_BACKGROUND) {
+                        /* Back-up bmap to detect pages has been sent */
+                        shadow_bmap[k] = dest[k];
+                    }
+                }
                 new_dirty = ~dest[k];
-                dest[k] |= bits;
+                if (flag == RAMBLOCK_SYN_LEGACY_ITER) {
+                    dest[k] |= bits;
+                }
+
                 new_dirty &= bits;
                 num_dirty += ctpopl(new_dirty);
             }
@@ -534,16 +597,48 @@ uint64_t cpu_physical_memory_sync_dirty_bitmap(RAMBlock *rb,
         ram_addr_t offset = rb->offset;
 
         for (addr = 0; addr < length; addr += TARGET_PAGE_SIZE) {
-            if (cpu_physical_memory_test_and_clear_dirty(
+            bool dirty = false;
+            long k = (start + addr) >> TARGET_PAGE_BITS;
+            if (flag == RAMBLOCK_SYN_MODERN_BACKGROUND) {
+                if (test_bit(k, dest)) {
+                    /* Back-up bmap to detect pages has been sent */
+                    set_bit(k, shadow_bmap);
+                }
+            }
+
+            dirty = cpu_physical_memory_test_and_clear_dirty(
                         start + addr + offset,
                         TARGET_PAGE_SIZE,
-                        DIRTY_MEMORY_MIGRATION)) {
-                long k = (start + addr) >> TARGET_PAGE_BITS;
-                if (!test_and_set_bit(k, dest)) {
+                        DIRTY_MEMORY_MIGRATION);
+
+            if (flag == RAMBLOCK_SYN_LEGACY_ITER) {
+                if (dirty && !test_and_set_bit(k, dest)) {
                     num_dirty++;
+                }
+            } else {
+                if (dirty) {
+                    if (!test_bit(k, dest)) {
+                        num_dirty++;
+                    }
+                    /* Back-up bmap for the next iteration */
+                    set_bit(k, iter_bmap);
                 }
             }
         }
+    }
+
+    /*
+     * We have to re-fetch dirty pages from the iter_bmap one by one.
+     * It's possible that not all of the dirty pages that meant to
+     * send in the current iteration are included in the bitmap
+     * that the current sync retrieved from the KVM.
+     */
+    if (flag == RAMBLOCK_SYN_MODERN_ITER) {
+        ramblock_update_iter_bmap(rb, start, length);
+    }
+
+    if (flag == RAMBLOCK_SYN_MODERN_BACKGROUND) {
+        rb->background_sync_shown_up = true;
     }
 
     return num_dirty;
