@@ -24,6 +24,12 @@
 #include "qemu/rcu.h"
 #include "exec/ramlist.h"
 
+typedef enum RAMBlockSyncMode {
+    RAMBLOCK_SYNC_LEGACY, /* Old-fashined mode */
+    RAMBLOCK_SYNC_BG,     /* Background sync mode */
+    RAMBLOCK_SYNC_ITER,   /* Iteration sync mode */
+} RAMBlockSyncMode;
+
 struct RAMBlock {
     struct rcu_head rcu;
     struct MemoryRegion *mr;
@@ -89,6 +95,27 @@ struct RAMBlock {
      * could not have been valid on the source.
      */
     ram_addr_t postcopy_length;
+
+    /*
+     * Used to backup the bmap during background sync to see whether any dirty
+     * pages were sent during that time.
+     */
+    unsigned long *shadow_bmap;
+
+    /*
+     * The bitmap "bmap," which was initially used for both sync and memory
+     * transfer, will be replaced by two bitmaps: the previously used "bmap"
+     * and the recently added "iter_bmap." Only the memory transfer is
+     * conducted with the previously used "bmap"; the recently added
+     * "iter_bmap" is utilized for dirty bitmap sync.
+     */
+    unsigned long *iter_bmap;
+
+    /* Number of new dirty pages during iteration */
+    uint64_t iter_dirty_pages;
+
+    /* If background sync has shown up during iteration */
+    bool background_sync_shown_up;
 };
 #endif
 #endif

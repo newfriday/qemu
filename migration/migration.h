@@ -457,6 +457,9 @@ struct MigrationState {
     bool switchover_acked;
     /* Is this a rdma migration */
     bool rdma_migration;
+
+    /* Indicates whether background dirty sync enabled */
+    bool background_dirty_sync;
 };
 
 void migrate_set_state(MigrationStatus *state, MigrationStatus old_state,

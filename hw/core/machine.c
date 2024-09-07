@@ -34,6 +34,11 @@
 #include "hw/virtio/virtio-iommu.h"
 #include "audio/audio.h"
 
+GlobalProperty hw_compat_9_2[] = {
+    { "migration", "background-dirty-sync", "true"},
+};
+const size_t hw_compat_9_2_len = G_N_ELEMENTS(hw_compat_9_2);
+
 GlobalProperty hw_compat_9_1[] = {};
 const size_t hw_compat_9_1_len = G_N_ELEMENTS(hw_compat_9_1);
 
