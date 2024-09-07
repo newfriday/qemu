@@ -1420,6 +1420,9 @@ static void migrate_fd_cleanup(MigrationState *s)
             qemu_thread_join(&s->thread);
             s->migration_thread_running = false;
         }
+        if (migrate_periodic_throttle()) {
+            periodic_throttle_stop();
+        }
         bql_lock();
 
         multifd_send_shutdown();
@@ -3263,6 +3266,9 @@ static MigIterateState migration_iteration_run(MigrationState *s)
 
     if ((!pending_size || pending_size < s->threshold_size) && can_switchover) {
         trace_migration_thread_low_pending(pending_size);
+        if (migrate_periodic_throttle()) {
+            periodic_throttle_stop();
+        }
         migration_completion(s);
         return MIG_ITERATE_BREAK;
     }
@@ -3507,6 +3513,11 @@ static void *migration_thread(void *opaque)
     bql_lock();
     ret = qemu_savevm_state_setup(s->to_dst_file, &local_err);
     bql_unlock();
+
+    if (migrate_periodic_throttle()) {
+        periodic_throttle_setup(true);
+        periodic_throttle_start();
+    }
 
     qemu_savevm_wait_unplug(s, MIGRATION_STATUS_SETUP,
                                MIGRATION_STATUS_ACTIVE);

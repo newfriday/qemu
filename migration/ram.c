@@ -1076,7 +1076,14 @@ static void migration_bitmap_sync(RAMState *rs,
     RAMBlock *block;
     int64_t end_time;
 
-    if (!periodic) {
+    if (periodic) {
+        int interval = migrate_periodic_interval();
+        int64_t curr_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+
+        if (curr_time < rs->time_last_bitmap_sync + interval * 1000) {
+            return;
+        }
+    } else {
         stat64_add(&mig_stats.iterations, 1);
     }
 
