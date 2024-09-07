@@ -93,4 +93,7 @@ void ram_write_tracking_prepare(void);
 int ram_write_tracking_start(void);
 void ram_write_tracking_stop(void);
 
+/* Migration background sync */
+void migration_background_sync_setup(void);
+void migration_background_sync_cleanup(void);
 #endif

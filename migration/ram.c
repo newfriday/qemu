@@ -416,6 +416,11 @@ struct RAMState {
      * RAM migration.
      */
     unsigned int postcopy_bmap_sync_requested;
+
+    /* Background throttle information */
+    bool background_sync_running;
+    QemuThread background_sync_thread;
+    QemuSemaphore quit_sem;
 };
 typedef struct RAMState RAMState;
 
@@ -1123,6 +1128,111 @@ static void migration_bitmap_sync(RAMState *rs,
         uint64_t generation = stat64_get(&mig_stats.iteration_count);
         qapi_event_send_migration_pass(generation);
     }
+}
+
+/*
+ * Iteration lasting more than five seconds is undesirable;
+ * launch a background dirty bitmap sync.
+ */
+#define MIGRATION_MAX_ITERATION_DURATION  5
+
+static void *migration_background_sync_watcher(void *opaque)
+{
+    RAMState *rs = opaque;
+    uint64_t iter_cnt, prev_iter_cnt = 2;
+    bool iter_cnt_unchanged = false;
+    int max_pct = migrate_max_cpu_throttle();
+
+    trace_migration_background_sync_watcher_start();
+    rcu_register_thread();
+
+    while (qatomic_read(&rs->background_sync_running)) {
+        int cur_pct = cpu_throttle_get_percentage();
+        if ((cur_pct == max_pct) || (!migration_is_active())) {
+            break;
+        }
+
+        if (qemu_sem_timedwait(&rs->quit_sem, 1000) == 0) {
+            /* We were woken by background_sync_cleanup, quit */
+            break;
+        }
+
+        /*
+         * The first iteration copies all memory anyhow and has no
+         * effect on guest performance, therefore omit it to avoid
+         * paying extra for the sync penalty.
+         */
+        iter_cnt = stat64_get(&mig_stats.iteration_count);
+        if (iter_cnt <= 1) {
+            continue;
+        }
+
+        iter_cnt_unchanged = (iter_cnt == prev_iter_cnt);
+        prev_iter_cnt = iter_cnt;
+
+        if (iter_cnt_unchanged) {
+            int64_t curr_time, iter_duration;
+
+            curr_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+            iter_duration = curr_time - rs->time_last_bitmap_sync;
+
+            if (iter_duration >
+                    MIGRATION_MAX_ITERATION_DURATION * 1000) {
+                sync_mode = RAMBLOCK_SYN_MODERN;
+                bql_lock();
+                trace_migration_background_sync();
+                WITH_RCU_READ_LOCK_GUARD() {
+                    migration_bitmap_sync(rs, false, true);
+                }
+                bql_unlock();
+            }
+        }
+    }
+
+    qatomic_set(&rs->background_sync_running, 0);
+
+    rcu_unregister_thread();
+    trace_migration_background_sync_watcher_end();
+
+    return NULL;
+}
+
+void migration_background_sync_setup(void)
+{
+    RAMState *rs = ram_state;
+
+    if (!rs) {
+        return;
+    }
+
+    if (qatomic_read(&rs->background_sync_running)) {
+        return;
+    }
+
+    qemu_sem_init(&rs->quit_sem, 0);
+    qatomic_set(&rs->background_sync_running, 1);
+
+    qemu_thread_create(&rs->background_sync_thread,
+                       NULL, migration_background_sync_watcher,
+                       rs, QEMU_THREAD_JOINABLE);
+}
+
+void migration_background_sync_cleanup(void)
+{
+    RAMState *rs = ram_state;
+
+    if (!rs) {
+        return;
+    }
+
+    if (!qatomic_read(&rs->background_sync_running)) {
+        return;
+    }
+
+    qatomic_set(&rs->background_sync_running, 0);
+    qemu_sem_post(&rs->quit_sem);
+    qemu_thread_join(&rs->background_sync_thread);
+    qemu_sem_destroy(&rs->quit_sem);
 }
 
 static void migration_bitmap_sync_precopy(RAMState *rs, bool last_stage)
