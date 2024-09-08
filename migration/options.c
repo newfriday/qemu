@@ -111,6 +111,8 @@ Property migration_properties[] = {
                       DEFAULT_MIGRATE_CPU_THROTTLE_INCREMENT),
     DEFINE_PROP_BOOL("x-cpu-throttle-tailslow", MigrationState,
                       parameters.cpu_throttle_tailslow, false),
+    DEFINE_PROP_BOOL("x-cpu-throttle-responsive", MigrationState,
+                      parameters.cpu_throttle_responsive, false),
     DEFINE_PROP_SIZE("x-max-bandwidth", MigrationState,
                       parameters.max_bandwidth, MAX_THROTTLE),
     DEFINE_PROP_SIZE("avail-switchover-bandwidth", MigrationState,
@@ -705,6 +707,13 @@ uint8_t migrate_cpu_throttle_initial(void)
     return s->parameters.cpu_throttle_initial;
 }
 
+bool migrate_cpu_throttle_responsive(void)
+{
+    MigrationState *s = migrate_get_current();
+
+    return s->parameters.cpu_throttle_responsive;
+}
+
 bool migrate_cpu_throttle_tailslow(void)
 {
     MigrationState *s = migrate_get_current();
@@ -891,6 +900,8 @@ MigrationParameters *qmp_query_migrate_parameters(Error **errp)
     params->cpu_throttle_increment = s->parameters.cpu_throttle_increment;
     params->has_cpu_throttle_tailslow = true;
     params->cpu_throttle_tailslow = s->parameters.cpu_throttle_tailslow;
+    params->has_cpu_throttle_responsive = true;
+    params->cpu_throttle_responsive = s->parameters.cpu_throttle_responsive;
     params->tls_creds = g_strdup(s->parameters.tls_creds);
     params->tls_hostname = g_strdup(s->parameters.tls_hostname);
     params->tls_authz = g_strdup(s->parameters.tls_authz ?
@@ -959,6 +970,7 @@ void migrate_params_init(MigrationParameters *params)
     params->has_cpu_throttle_initial = true;
     params->has_cpu_throttle_increment = true;
     params->has_cpu_throttle_tailslow = true;
+    params->has_cpu_throttle_responsive = true;
     params->has_max_bandwidth = true;
     params->has_downtime_limit = true;
     params->has_x_checkpoint_delay = true;
@@ -1191,6 +1203,10 @@ static void migrate_params_test_apply(MigrateSetParameters *params,
         dest->cpu_throttle_tailslow = params->cpu_throttle_tailslow;
     }
 
+    if (params->has_cpu_throttle_responsive) {
+        dest->cpu_throttle_responsive = params->cpu_throttle_responsive;
+    }
+
     if (params->tls_creds) {
         assert(params->tls_creds->type == QTYPE_QSTRING);
         dest->tls_creds = params->tls_creds->u.s;
@@ -1300,6 +1316,10 @@ static void migrate_params_apply(MigrateSetParameters *params, Error **errp)
 
     if (params->has_cpu_throttle_tailslow) {
         s->parameters.cpu_throttle_tailslow = params->cpu_throttle_tailslow;
+    }
+
+    if (params->has_cpu_throttle_responsive) {
+        s->parameters.cpu_throttle_responsive = params->cpu_throttle_responsive;
     }
 
     if (params->tls_creds) {

@@ -728,6 +728,10 @@
 #     be excessive at tail stage.  The default value is false.  (Since
 #     5.1)
 #
+# @cpu-throttle-responsive: Make CPU throttling more responsive by
+#                           introduce an extra detection metric of
+#                           migration convergence.  (Since 9.2)
+#
 # @tls-creds: ID of the 'tls-creds' object that provides credentials
 #     for establishing a TLS connection over the migration data
 #     channel.  On the outgoing side of the migration, the credentials
@@ -853,7 +857,7 @@
            'announce-rounds', 'announce-step',
            'throttle-trigger-threshold',
            'cpu-throttle-initial', 'cpu-throttle-increment',
-           'cpu-throttle-tailslow',
+           'cpu-throttle-tailslow', 'cpu-throttle-responsive',
            'tls-creds', 'tls-hostname', 'tls-authz', 'max-bandwidth',
            'avail-switchover-bandwidth', 'downtime-limit',
            { 'name': 'x-checkpoint-delay', 'features': [ 'unstable' ] },
@@ -908,6 +912,10 @@
 #     traditional throttling, meanwhile the throttle increment won't
 #     be excessive at tail stage.  The default value is false.  (Since
 #     5.1)
+#
+# @cpu-throttle-responsive: Make CPU throttling more responsive by
+#                           introduce an extra detection metric of
+#                           migration convergence.  (Since 9.1)
 #
 # @tls-creds: ID of the 'tls-creds' object that provides credentials
 #     for establishing a TLS connection over the migration data
@@ -1041,6 +1049,7 @@
             '*cpu-throttle-initial': 'uint8',
             '*cpu-throttle-increment': 'uint8',
             '*cpu-throttle-tailslow': 'bool',
+            '*cpu-throttle-responsive': 'bool',
             '*tls-creds': 'StrOrNull',
             '*tls-hostname': 'StrOrNull',
             '*tls-authz': 'StrOrNull',
@@ -1122,6 +1131,10 @@
 #     traditional throttling, meanwhile the throttle increment won't
 #     be excessive at tail stage.  The default value is false.  (Since
 #     5.1)
+#
+# @cpu-throttle-responsive: Make CPU throttling more responsive by
+#                           introduce an extra detection metric of
+#                           migration convergence. (Since 9.1)
 #
 # @tls-creds: ID of the 'tls-creds' object that provides credentials
 #     for establishing a TLS connection over the migration data
@@ -1248,6 +1261,7 @@
             '*cpu-throttle-initial': 'uint8',
             '*cpu-throttle-increment': 'uint8',
             '*cpu-throttle-tailslow': 'bool',
+            '*cpu-throttle-responsive': 'bool',
             '*tls-creds': 'str',
             '*tls-hostname': 'str',
             '*tls-authz': 'str',
