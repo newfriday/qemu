@@ -273,6 +273,10 @@ void hmp_info_migrate_parameters(Monitor *mon, const QDict *qdict)
             MigrationParameter_str(
                 MIGRATION_PARAMETER_CPU_PERIODIC_THROTTLE_INTERVAL),
             params->cpu_periodic_throttle_interval);
+        assert(params->has_cpu_responsive_throttle);
+        monitor_printf(mon, "%s: %s\n",
+            MigrationParameter_str(MIGRATION_PARAMETER_CPU_RESPONSIVE_THROTTLE),
+            params->cpu_responsive_throttle ? "on" : "off");
         assert(params->has_max_cpu_throttle);
         monitor_printf(mon, "%s: %u\n",
             MigrationParameter_str(MIGRATION_PARAMETER_MAX_CPU_THROTTLE),
@@ -528,6 +532,10 @@ void hmp_migrate_set_parameter(Monitor *mon, const QDict *qdict)
     case MIGRATION_PARAMETER_CPU_PERIODIC_THROTTLE_INTERVAL:
         p->has_cpu_periodic_throttle_interval = true;
         visit_type_uint8(v, param, &p->cpu_periodic_throttle_interval, &err);
+        break;
+    case MIGRATION_PARAMETER_CPU_RESPONSIVE_THROTTLE:
+        p->has_cpu_responsive_throttle = true;
+        visit_type_bool(v, param, &p->cpu_responsive_throttle, &err);
         break;
     case MIGRATION_PARAMETER_MAX_CPU_THROTTLE:
         p->has_max_cpu_throttle = true;
