@@ -281,6 +281,11 @@ static uint64_t get_migration_pass(QTestState *who)
     return read_ram_property_int(who, "iteration-count");
 }
 
+static uint64_t get_migration_dirty_sync_count(QTestState *who)
+{
+    return read_ram_property_int(who, "dirty-sync-count");
+}
+
 static void read_blocktime(QTestState *who)
 {
     QDict *rsp_return;
@@ -709,6 +714,11 @@ typedef struct {
     bool postcopy_preempt;
     PostcopyRecoveryFailStage postcopy_recovery_fail_stage;
 } MigrateCommon;
+
+typedef struct {
+    /* CPU throttle parameters */
+    bool periodic;
+} AutoConvergeArgs;
 
 static int test_migrate_start(QTestState **from, QTestState **to,
                               const char *uri, MigrateStart *args)
@@ -2778,12 +2788,13 @@ static void test_validate_uri_channels_none_set(void)
  * To make things even worse, we need to run the initial stage at
  * 3MB/s so we enter autoconverge even when host is (over)loaded.
  */
-static void test_migrate_auto_converge(void)
+static void test_migrate_auto_converge_args(AutoConvergeArgs *input_args)
 {
     g_autofree char *uri = g_strdup_printf("unix:%s/migsocket", tmpfs);
     MigrateStart args = {};
     QTestState *from, *to;
     int64_t percentage;
+    bool periodic = (input_args && input_args->periodic);
 
     /*
      * We want the test to be stable and as fast as possible.
@@ -2791,6 +2802,7 @@ static void test_migrate_auto_converge(void)
      * so we need to decrease a bandwidth.
      */
     const int64_t init_pct = 5, inc_pct = 25, max_pct = 95;
+    const int64_t periodic_throttle_interval = 2;
 
     if (test_migrate_start(&from, &to, uri, &args)) {
         return;
@@ -2800,6 +2812,12 @@ static void test_migrate_auto_converge(void)
     migrate_set_parameter_int(from, "cpu-throttle-initial", init_pct);
     migrate_set_parameter_int(from, "cpu-throttle-increment", inc_pct);
     migrate_set_parameter_int(from, "max-cpu-throttle", max_pct);
+
+    if (periodic) {
+        migrate_set_parameter_bool(from, "cpu-periodic-throttle", true);
+        migrate_set_parameter_int(from, "cpu-periodic-throttle-interval",
+                periodic_throttle_interval);
+    }
 
     /*
      * Set the initial parameters so that the migration could not converge
@@ -2827,6 +2845,29 @@ static void test_migrate_auto_converge(void)
     } while (true);
     /* The first percentage of throttling should be at least init_pct */
     g_assert_cmpint(percentage, >=, init_pct);
+
+    if (periodic) {
+        /*
+         * Check if periodic sync take effect, set the timeout with 20s
+         * (max_try_count * 1s), if extra sync doesn't show up, fail test.
+         */
+        uint64_t iteration_count, dirty_sync_count;
+        bool extra_sync = false;
+        int max_try_count = 20;
+
+        /* Check if periodic sync take effect */
+        while (--max_try_count) {
+            usleep(1000 * 1000);
+            iteration_count = get_migration_pass(from);
+            dirty_sync_count = get_migration_dirty_sync_count(from);
+            if (dirty_sync_count > iteration_count) {
+                extra_sync = true;
+                break;
+            }
+        }
+        g_assert(extra_sync);
+    }
+
     /* Now, when we tested that throttling works, let it converge */
     migrate_ensure_converge(from);
 
@@ -2847,6 +2888,17 @@ static void test_migrate_auto_converge(void)
     wait_for_migration_complete(from);
 
     test_migrate_end(from, to, true);
+}
+
+static void test_migrate_auto_converge(void)
+{
+    test_migrate_auto_converge_args(NULL);
+}
+
+static void test_migrate_auto_converge_periodic_throttle(void)
+{
+    AutoConvergeArgs args = {.periodic = true};
+    test_migrate_auto_converge_args(&args);
 }
 
 static void *
@@ -3900,6 +3952,8 @@ int main(int argc, char **argv)
     if (g_test_slow()) {
         migration_test_add("/migration/auto_converge",
                            test_migrate_auto_converge);
+        migration_test_add("/migration/auto_converge_periodic_throttle",
+                           test_migrate_auto_converge_periodic_throttle);
         if (g_str_equal(arch, "x86_64") &&
             has_kvm && kvm_dirty_ring_supported()) {
             migration_test_add("/migration/dirty_limit",
