@@ -2815,6 +2815,7 @@ static void test_migrate_auto_converge(void)
     migrate_set_parameter_int(from, "cpu-throttle-initial", init_pct);
     migrate_set_parameter_int(from, "cpu-throttle-increment", inc_pct);
     migrate_set_parameter_int(from, "max-cpu-throttle", max_pct);
+    migrate_set_parameter_bool(from, "cpu-responsive-throttle", true);
 
     /*
      * Set the initial parameters so that the migration could not converge
