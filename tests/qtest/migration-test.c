@@ -2812,6 +2812,7 @@ static void test_migrate_auto_converge_args(AutoConvergeArgs *input_args)
     migrate_set_parameter_int(from, "cpu-throttle-initial", init_pct);
     migrate_set_parameter_int(from, "cpu-throttle-increment", inc_pct);
     migrate_set_parameter_int(from, "max-cpu-throttle", max_pct);
+    migrate_set_parameter_bool(from, "cpu-responsive-throttle", true);
 
     if (periodic) {
         migrate_set_parameter_bool(from, "cpu-periodic-throttle", true);
