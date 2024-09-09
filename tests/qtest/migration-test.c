@@ -718,6 +718,7 @@ typedef struct {
 typedef struct {
     /* CPU throttle parameters */
     bool periodic;
+    bool responsive;
 } AutoConvergeArgs;
 
 static int test_migrate_start(QTestState **from, QTestState **to,
@@ -2795,6 +2796,7 @@ static void test_migrate_auto_converge_args(AutoConvergeArgs *input_args)
     QTestState *from, *to;
     int64_t percentage;
     bool periodic = (input_args && input_args->periodic);
+    bool responsive = (input_args && input_args->responsive);
 
     /*
      * We want the test to be stable and as fast as possible.
@@ -2818,6 +2820,16 @@ static void test_migrate_auto_converge_args(AutoConvergeArgs *input_args)
         migrate_set_parameter_bool(from, "cpu-periodic-throttle", true);
         migrate_set_parameter_int(from, "cpu-periodic-throttle-interval",
                 periodic_throttle_interval);
+    }
+
+    if (responsive) {
+        /*
+         * The dirty-sync-count may not always go down while using responsive
+         * throttle because it is an optimization and may not take effect in
+         * any scenario. Just making sure this feature doesn't break any
+         * existing functionality by turning it on.
+         */
+        migrate_set_parameter_bool(from, "cpu-responsive-throttle", true);
     }
 
     /*
@@ -2899,6 +2911,12 @@ static void test_migrate_auto_converge(void)
 static void test_migrate_auto_converge_periodic_throttle(void)
 {
     AutoConvergeArgs args = {.periodic = true};
+    test_migrate_auto_converge_args(&args);
+}
+
+static void test_migrate_auto_converge_responsive_throttle(void)
+{
+    AutoConvergeArgs args = {.responsive = true};
     test_migrate_auto_converge_args(&args);
 }
 
@@ -3955,6 +3973,8 @@ int main(int argc, char **argv)
                            test_migrate_auto_converge);
         migration_test_add("/migration/auto_converge_periodic_throttle",
                            test_migrate_auto_converge_periodic_throttle);
+        migration_test_add("/migration/auto_converge_responsive_throttle",
+                           test_migrate_auto_converge_responsive_throttle);
         if (g_str_equal(arch, "x86_64") &&
             has_kvm && kvm_dirty_ring_supported()) {
             migration_test_add("/migration/dirty_limit",
