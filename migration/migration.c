@@ -1416,6 +1416,7 @@ static void migrate_fd_cleanup(MigrationState *s)
 
         trace_migrate_fd_cleanup();
         bql_unlock();
+        migration_background_sync_cleanup();
         if (s->migration_thread_running) {
             qemu_thread_join(&s->thread);
             s->migration_thread_running = false;
@@ -3263,6 +3264,7 @@ static MigIterateState migration_iteration_run(MigrationState *s)
 
     if ((!pending_size || pending_size < s->threshold_size) && can_switchover) {
         trace_migration_thread_low_pending(pending_size);
+        migration_background_sync_cleanup();
         migration_completion(s);
         return MIG_ITERATE_BREAK;
     }
@@ -3507,6 +3509,16 @@ static void *migration_thread(void *opaque)
     bql_lock();
     ret = qemu_savevm_state_setup(s->to_dst_file, &local_err);
     bql_unlock();
+
+    if (!migrate_dirty_limit()) {
+        /*
+         * Initiate the background sync watcher in order to guarantee
+         * that the CPU throttling acts appropriately. Dirty Limit
+         * doesn't use CPU throttle to make guest down, so ignore that
+         * case.
+         */
+        migration_background_sync_setup();
+    }
 
     qemu_savevm_wait_unplug(s, MIGRATION_STATUS_SETUP,
                                MIGRATION_STATUS_ACTIVE);

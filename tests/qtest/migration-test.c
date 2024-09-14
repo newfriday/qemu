@@ -281,6 +281,11 @@ static uint64_t get_migration_pass(QTestState *who)
     return read_ram_property_int(who, "iteration-count");
 }
 
+static uint64_t get_dirty_sync_count(QTestState *who)
+{
+    return read_ram_property_int(who, "dirty-sync-count");
+}
+
 static void read_blocktime(QTestState *who)
 {
     QDict *rsp_return;
@@ -466,6 +471,12 @@ static void migrate_ensure_converge(QTestState *who)
     /* Should converge with 30s downtime + 1 gbs bandwidth limit */
     migrate_set_parameter_int(who, "max-bandwidth", 1 * 1000 * 1000 * 1000);
     migrate_set_parameter_int(who, "downtime-limit", 30 * 1000);
+}
+
+static void migrate_ensure_iteration_last_long(QTestState *who)
+{
+    /* Set 10Byte/s bandwidth limit to make the iteration last long enough */
+    migrate_set_parameter_int(who, "max-bandwidth", 10);
 }
 
 /*
@@ -2791,6 +2802,10 @@ static void test_migrate_auto_converge(void)
      * so we need to decrease a bandwidth.
      */
     const int64_t init_pct = 5, inc_pct = 25, max_pct = 95;
+    uint64_t prev_iter_cnt = 0, iter_cnt;
+    uint64_t iter_cnt_changes = 0;
+    uint64_t prev_dirty_sync_cnt = 0, dirty_sync_cnt;
+    uint64_t dirty_sync_cnt_changes = 0;
 
     if (test_migrate_start(&from, &to, uri, &args)) {
         return;
@@ -2827,6 +2842,30 @@ static void test_migrate_auto_converge(void)
     } while (true);
     /* The first percentage of throttling should be at least init_pct */
     g_assert_cmpint(percentage, >=, init_pct);
+
+    /* Make sure the iteration take a long time enough */
+    migrate_ensure_iteration_last_long(from);
+
+    /*
+     * End the loop when the dirty sync count or iteration count changes.
+     */
+    while (iter_cnt_changes < 2 && dirty_sync_cnt_changes < 2) {
+        usleep(1000 * 1000);
+        iter_cnt = get_migration_pass(from);
+        iter_cnt_changes += (iter_cnt != prev_iter_cnt);
+        prev_iter_cnt = iter_cnt;
+
+        dirty_sync_cnt = get_dirty_sync_count(from);
+        dirty_sync_cnt_changes += (dirty_sync_cnt != prev_dirty_sync_cnt);
+        prev_dirty_sync_cnt = dirty_sync_cnt;
+    }
+
+    /*
+     * The dirty sync count must have changed because we are in the same
+     * iteration.
+     */
+    g_assert_cmpint(iter_cnt_changes , < , dirty_sync_cnt_changes);
+
     /* Now, when we tested that throttling works, let it converge */
     migrate_ensure_converge(from);
 
