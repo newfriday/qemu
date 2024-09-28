@@ -110,6 +110,12 @@
  */
 #define MAPPED_RAM_LOAD_BUF_SIZE 0x100000
 
+/* Background ramblock dirty sync trigger every five seconds */
+#define BG_RAM_SYNC_TIMESLICE_MS 5000
+#define BG_RAM_SYNC_TIMER_INTERVAL_MS 1000
+
+static QEMUTimer *bg_ram_dirty_sync_timer;
+
 XBZRLECacheStats xbzrle_counters;
 
 /* used by the search for pages to send */
@@ -4541,6 +4547,64 @@ static void ram_mig_ram_block_resized(RAMBlockNotifier *n, void *host,
                      rb->idstr, ps);
         exit(-1);
     }
+}
+
+static void bg_ram_dirty_sync_timer_tick(void *opaque)
+{
+    static int prev_pct;
+    static uint64_t prev_sync_cnt = 2;
+    uint64_t sync_cnt = stat64_get(&mig_stats.dirty_sync_count);
+    int cur_pct = cpu_throttle_get_percentage();
+
+    if (prev_pct && !cur_pct) {
+        /* CPU throttle timer stopped, so do we */
+        return;
+    }
+
+    /*
+     * The first iteration copies all memory anyhow and has no
+     * effect on guest performance, therefore omit it to avoid
+     * paying extra for the sync penalty.
+     */
+    if (sync_cnt <= 1) {
+        goto end;
+    }
+
+    if (sync_cnt == prev_sync_cnt) {
+        int64_t curr_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+        assert(ram_state);
+        if ((curr_time - ram_state->time_last_bitmap_sync) >
+            BG_RAM_SYNC_TIMESLICE_MS) {
+            trace_bg_ram_dirty_sync();
+            WITH_RCU_READ_LOCK_GUARD() {
+                migration_bitmap_sync_precopy(ram_state, false);
+            }
+        }
+    }
+
+end:
+    prev_sync_cnt = stat64_get(&mig_stats.dirty_sync_count);
+    prev_pct = cpu_throttle_get_percentage();
+
+    timer_mod(bg_ram_dirty_sync_timer,
+        qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL_RT) +
+            BG_RAM_SYNC_TIMER_INTERVAL_MS);
+}
+
+void bg_ram_dirty_sync_timer_enable(bool enable)
+{
+    if (enable) {
+        bg_ram_dirty_sync_timer_tick(NULL);
+    } else {
+        timer_del(bg_ram_dirty_sync_timer);
+    }
+}
+
+void bg_ram_dirty_sync_init(void)
+{
+    bg_ram_dirty_sync_timer =
+        timer_new_ms(QEMU_CLOCK_VIRTUAL_RT,
+                     bg_ram_dirty_sync_timer_tick, NULL);
 }
 
 static RAMBlockNotifier ram_mig_ram_notifier = {

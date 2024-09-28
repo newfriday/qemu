@@ -25,6 +25,7 @@
 #include "qemu/osdep.h"
 #include "qemu/cutils.h"
 #include "migration/vmstate.h"
+#include "migration/misc.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "sysemu/cpus.h"
@@ -274,4 +275,5 @@ void cpu_timers_init(void)
     vmstate_register(NULL, 0, &vmstate_timers, &timers_state);
 
     cpu_throttle_init();
+    bg_ram_dirty_sync_init();
 }

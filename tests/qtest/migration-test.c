@@ -468,6 +468,12 @@ static void migrate_ensure_converge(QTestState *who)
     migrate_set_parameter_int(who, "downtime-limit", 30 * 1000);
 }
 
+static void migrate_ensure_iteration_last_long(QTestState *who)
+{
+    /* Set 10Byte/s bandwidth limit to make the iteration last long enough */
+    migrate_set_parameter_int(who, "max-bandwidth", 10);
+}
+
 /*
  * Our goal is to ensure that we run a single full migration
  * iteration, and also dirty memory, ensuring that at least
@@ -2791,6 +2797,7 @@ static void test_migrate_auto_converge(void)
      * so we need to decrease a bandwidth.
      */
     const int64_t init_pct = 5, inc_pct = 25, max_pct = 95;
+    uint64_t prev_dirty_sync_cnt, dirty_sync_cnt;
 
     if (test_migrate_start(&from, &to, uri, &args)) {
         return;
@@ -2827,6 +2834,28 @@ static void test_migrate_auto_converge(void)
     } while (true);
     /* The first percentage of throttling should be at least init_pct */
     g_assert_cmpint(percentage, >=, init_pct);
+
+    /* Make sure the iteration last a long time enough */
+    migrate_ensure_iteration_last_long(from);
+
+    /*
+     * End the loop when the dirty sync count greater than 1.
+     */
+    while ((dirty_sync_cnt = get_migration_pass(from)) < 2) {
+        usleep(1000 * 1000);
+    }
+
+    prev_dirty_sync_cnt = dirty_sync_cnt;
+
+    /*
+     * The dirty sync count must changes in 5 seconds, here we
+     * plus 1 second as error value.
+     */
+    sleep(5 + 1);
+
+    dirty_sync_cnt = get_migration_pass(from);
+    g_assert_cmpint(dirty_sync_cnt, != , prev_dirty_sync_cnt);
+
     /* Now, when we tested that throttling works, let it converge */
     migrate_ensure_converge(from);
 

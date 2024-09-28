@@ -3285,6 +3285,9 @@ static void migration_iteration_finish(MigrationState *s)
 {
     /* If we enabled cpu throttling for auto-converge, turn it off. */
     cpu_throttle_stop();
+    if (migrate_auto_converge()) {
+        bg_ram_dirty_sync_timer_enable(false);
+    }
 
     bql_lock();
     switch (s->state) {
@@ -3525,6 +3528,14 @@ static void *migration_thread(void *opaque)
     s->setup_time = qemu_clock_get_ms(QEMU_CLOCK_HOST) - setup_start;
 
     trace_migration_thread_setup_complete();
+
+    /*
+     * Tick the background ramblock dirty sync timer after setup
+     * phase.
+     */
+    if (migrate_auto_converge()) {
+        bg_ram_dirty_sync_timer_enable(true);
+    }
 
     while (migration_is_active()) {
         if (urgent || !migration_rate_exceeded(s->to_dst_file)) {
