@@ -28,15 +28,22 @@
 #include "qemu/main-loop.h"
 #include "sysemu/cpus.h"
 #include "cpu-throttle.h"
+#include "migration.h"
+#include "migration-stats.h"
+#include "options.h"
 #include "trace.h"
 
 /* vcpu throttling controls */
-static QEMUTimer *throttle_timer;
+static QEMUTimer *throttle_timer, *throttle_dirty_sync_timer;
 static unsigned int throttle_percentage;
+static uint64_t throttle_dirty_sync_count;
 
 #define CPU_THROTTLE_PCT_MIN 1
 #define CPU_THROTTLE_PCT_MAX 99
 #define CPU_THROTTLE_TIMESLICE_NS 10000000
+
+/* RAMBlock dirty sync trigger every five seconds */
+#define CPU_THROTTLE_DIRTY_SYNC_TIMESLICE_MS 5000
 
 static void cpu_throttle_thread(CPUState *cpu, run_on_cpu_data opaque)
 {
@@ -112,6 +119,7 @@ void cpu_throttle_set(int new_throttle_pct)
 void cpu_throttle_stop(void)
 {
     qatomic_set(&throttle_percentage, 0);
+    timer_del(throttle_dirty_sync_timer);
 }
 
 bool cpu_throttle_active(void)
@@ -124,8 +132,51 @@ int cpu_throttle_get_percentage(void)
     return qatomic_read(&throttle_percentage);
 }
 
+void cpu_throttle_dirty_sync_timer_tick(void *opaque)
+{
+    static uint64_t prev_sync_cnt = 2;
+    uint64_t sync_cnt = stat64_get(&mig_stats.dirty_sync_count);
+
+    if (!migrate_auto_converge()) {
+        /* Stop the timer when auto converge is disabled */
+        return;
+    }
+
+    /*
+     * The first iteration copies all memory anyhow and has no
+     * effect on guest performance, therefore omit it to avoid
+     * paying extra for the sync penalty.
+     */
+    if (sync_cnt <= 1) {
+        goto end;
+    }
+
+    if (sync_cnt == prev_sync_cnt) {
+        throttle_dirty_sync_count++;
+        trace_cpu_throttle_dirty_sync(throttle_dirty_sync_count);
+        WITH_RCU_READ_LOCK_GUARD() {
+            migration_bitmap_sync_precopy(false);
+        }
+    }
+
+end:
+    prev_sync_cnt = stat64_get(&mig_stats.dirty_sync_count);
+
+    timer_mod(throttle_dirty_sync_timer,
+        qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL_RT) +
+            CPU_THROTTLE_DIRTY_SYNC_TIMESLICE_MS);
+}
+
+bool cpu_throttle_dirty_sync_active(void)
+{
+    return throttle_dirty_sync_count != 0;
+}
+
 void cpu_throttle_init(void)
 {
     throttle_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL_RT,
                                   cpu_throttle_timer_tick, NULL);
+    throttle_dirty_sync_timer =
+        timer_new_ms(QEMU_CLOCK_VIRTUAL_RT,
+                     cpu_throttle_dirty_sync_timer_tick, NULL);
 }

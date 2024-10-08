@@ -65,4 +65,19 @@ bool cpu_throttle_active(void);
  */
 int cpu_throttle_get_percentage(void);
 
+/**
+ * cpu_throttle_dirty_sync_timer_tick:
+ *
+ * Dirty sync timer hook.
+ */
+void cpu_throttle_dirty_sync_timer_tick(void *opaque);
+
+/**
+ * cpu_throttle_dirty_sync_active:
+ *
+ * Returns: %true if the RAMBlock dirty bitmap is being synchronized by the
+ * timer, %false otherwise.
+ */
+bool cpu_throttle_dirty_sync_active(void);
+
 #endif /* SYSEMU_CPU_THROTTLE_H */
