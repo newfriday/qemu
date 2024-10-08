@@ -24,7 +24,7 @@
 #include "socket.h"
 #include "sysemu/runstate.h"
 #include "sysemu/sysemu.h"
-#include "sysemu/cpu-throttle.h"
+#include "cpu-throttle.h"
 #include "rdma.h"
 #include "ram.h"
 #include "migration/global_state.h"
@@ -263,6 +263,11 @@ void migration_object_init(void)
 
     ram_mig_init();
     dirty_bitmap_mig_init();
+
+    if (migrate_auto_converge()) {
+        /* Initialize cpu throttle timers */
+        cpu_throttle_init();
+    }
 }
 
 typedef struct {
