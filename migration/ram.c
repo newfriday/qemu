@@ -1020,6 +1020,11 @@ static void migration_trigger_throttle(RAMState *rs)
         migration_transferred_bytes() - rs->bytes_xfer_prev;
     uint64_t bytes_dirty_period = rs->num_dirty_pages_period * TARGET_PAGE_SIZE;
     uint64_t bytes_dirty_threshold = bytes_xfer_period * threshold / 100;
+    bool auto_converge = migrate_auto_converge();
+
+    if (auto_converge) {
+        cpu_throttle_dirty_sync_timer(true);
+    }
 
     /*
      * The following detection logic can be refined later. For now:
@@ -1031,7 +1036,7 @@ static void migration_trigger_throttle(RAMState *rs)
     if ((bytes_dirty_period > bytes_dirty_threshold) &&
         (++rs->dirty_rate_high_cnt >= 2)) {
         rs->dirty_rate_high_cnt = 0;
-        if (migrate_auto_converge()) {
+        if (auto_converge) {
             trace_migration_throttle();
             mig_throttle_guest_down(bytes_dirty_period,
                                     bytes_dirty_threshold);
@@ -1088,7 +1093,7 @@ static void migration_bitmap_sync(RAMState *rs, bool last_stage)
     }
 }
 
-static void migration_bitmap_sync_precopy(bool last_stage)
+void migration_bitmap_sync_precopy(bool last_stage)
 {
     Error *local_err = NULL;
     assert(ram_state);
