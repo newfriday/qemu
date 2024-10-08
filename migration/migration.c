@@ -24,7 +24,7 @@
 #include "socket.h"
 #include "sysemu/runstate.h"
 #include "sysemu/sysemu.h"
-#include "sysemu/cpu-throttle.h"
+#include "cpu-throttle.h"
 #include "rdma.h"
 #include "ram.h"
 #include "migration/global_state.h"
@@ -3506,6 +3506,11 @@ static void *migration_thread(void *opaque)
     if (migrate_colo()) {
         /* Notify migration destination that we enable COLO */
         qemu_savevm_send_colo_enable(s->to_dst_file);
+    }
+
+    if (migrate_auto_converge()) {
+        /* Start cpu throttle timers */
+        cpu_throttle_init();
     }
 
     bql_lock();
