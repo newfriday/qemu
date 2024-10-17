@@ -104,6 +104,12 @@ struct MultiFDSendData {
     MultiFDPayload u;
 };
 
+struct MultiFDAdaptComp {
+    QemuThread *thread;
+    MultiFDAdaptCompType type;
+    int level;
+};
+
 static inline bool multifd_payload_empty(MultiFDSendData *data)
 {
     return data->type == MULTIFD_PAYLOAD_NONE;

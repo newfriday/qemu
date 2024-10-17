@@ -96,6 +96,13 @@ struct {
     const MultiFDMethods *ops;
 } *multifd_recv_state;
 
+struct {
+    MultiFDAdaptComp *info;
+    QemuSemaphore comp_threads_created;
+    QemuSemaphore comp_threads_ready;
+    int exiting;
+} *multifd_adapt_comp_state;
+
 MultiFDSendData *multifd_send_data_alloc(void)
 {
     size_t max_payload_size, size_minus_payload;
