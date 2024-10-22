@@ -2717,7 +2717,7 @@ static void ram_list_init_bitmaps(void)
 {
     MigrationState *ms = migrate_get_current();
     RAMBlock *block;
-    unsigned long pages;
+    unsigned long pages, clear_bmap_pages;
     uint8_t shift;
 
     /* Skip setting bitmap if there is no RAM */
@@ -2735,6 +2735,7 @@ static void ram_list_init_bitmaps(void)
 
         RAMBLOCK_FOREACH_NOT_IGNORED(block) {
             pages = block->max_length >> TARGET_PAGE_BITS;
+            clear_bmap_pages = clear_bmap_size(pages, shift);
             /*
              * The initial dirty bitmap for migration must be set with all
              * ones to make sure we'll migrate every guest RAM page to
@@ -2750,7 +2751,17 @@ static void ram_list_init_bitmaps(void)
                 block->file_bmap = bitmap_new(pages);
             }
             block->clear_bmap_shift = shift;
-            block->clear_bmap = bitmap_new(clear_bmap_size(pages, shift));
+            block->clear_bmap = bitmap_new(clear_bmap_pages);
+            /*
+             * Set the clear bitmap by default to enable dirty logging.
+             *
+             * Note that with KVM_DIRTY_LOG_INITIALLY_SET, dirty logging
+             * will be enabled gradually in small chunks using
+             * KVM_CLEAR_DIRTY_LOG
+             */
+            if (kvm_dirty_log_manual_enabled()) {
+                bitmap_set(block->clear_bmap, 0, clear_bmap_pages);
+            }
         }
     }
 }
@@ -2770,6 +2781,7 @@ static void migration_bitmap_clear_discarded_pages(RAMState *rs)
 
 static bool ram_init_bitmaps(RAMState *rs, Error **errp)
 {
+    Error *local_err = NULL;
     bool ret = true;
 
     qemu_mutex_lock_ramlist();
@@ -2782,7 +2794,18 @@ static bool ram_init_bitmaps(RAMState *rs, Error **errp)
             if (!ret) {
                 goto out_unlock;
             }
-            migration_bitmap_sync_precopy(rs, false);
+            if (kvm_dirty_log_manual_enabled()) {
+                 /*
+                  * Skip the sync but still notify that the RAMBlock dirty
+                  * sync of the first iteration was finished.
+                  */
+                if (precopy_notify(PRECOPY_NOTIFY_AFTER_BITMAP_SYNC,
+                            &local_err)) {
+                    error_report_err(local_err);
+                }
+            } else {
+                migration_bitmap_sync_precopy(rs, false);
+            }
         }
     }
 out_unlock:
