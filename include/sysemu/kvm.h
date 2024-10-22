@@ -42,6 +42,7 @@ extern bool kvm_gsi_routing_allowed;
 extern bool kvm_gsi_direct_mapping;
 extern bool kvm_readonly_mem_allowed;
 extern bool kvm_msi_use_devid;
+extern bool kvm_dirty_log_manual;
 
 #define kvm_enabled()           (kvm_allowed)
 /**
@@ -143,6 +144,12 @@ extern bool kvm_msi_use_devid;
  */
 #define kvm_msi_devid_required() (kvm_msi_use_devid)
 
+/**
+ * kvm_dirty_log_manual_enabled:
+ * Returns: true if dirty logging manually was enabled.
+ */
+#define kvm_dirty_log_manual_enabled() (kvm_dirty_log_manual)
+
 #else
 
 #define kvm_enabled()           (0)
@@ -157,6 +164,7 @@ extern bool kvm_msi_use_devid;
 #define kvm_gsi_direct_mapping() (false)
 #define kvm_readonly_mem_enabled() (false)
 #define kvm_msi_devid_required() (false)
+#define kvm_dirty_log_manual_enabled() (false)
 
 #endif  /* CONFIG_KVM_IS_POSSIBLE */
 

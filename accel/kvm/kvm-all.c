@@ -93,6 +93,7 @@ bool kvm_allowed;
 bool kvm_readonly_mem_allowed;
 bool kvm_vm_attributes_allowed;
 bool kvm_msi_use_devid;
+bool kvm_dirty_log_manual;
 static bool kvm_has_guest_debug;
 static int kvm_sstep_flags;
 static bool kvm_immediate_exit;
@@ -2537,6 +2538,7 @@ static int kvm_setup_dirty_ring(KVMState *s)
                             dirty_log_manual_caps);
                 s->manual_dirty_log_protect = 0;
             }
+            kvm_dirty_log_manual = true;
         }
     }
 
