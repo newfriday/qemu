@@ -91,6 +91,28 @@ void qemu_clipboard_update(QemuClipboardInfo *info)
     }
 }
 
+void qemu_clipboard_update_silent(QemuClipboardInfo *info)
+{
+    uint32_t type;
+    assert(info->selection < QEMU_CLIPBOARD_SELECTION__COUNT);
+
+    for (type = 0; type < QEMU_CLIPBOARD_TYPE__COUNT; type++) {
+        /*
+         * If data is missing, the clipboard owner's 'request' callback needs to
+         * be set. Otherwise, there is no way to get the clipboard data and
+         * qemu_clipboard_request() cannot be called.
+         */
+        if (info->types[type].available && !info->types[type].data) {
+            assert(info->owner && info->owner->request);
+        }
+    }
+
+    if (cbinfo[info->selection] != info) {
+        qemu_clipboard_info_unref(cbinfo[info->selection]);
+        cbinfo[info->selection] = qemu_clipboard_info_ref(info);
+    }
+}
+
 QemuClipboardInfo *qemu_clipboard_info(QemuClipboardSelection selection)
 {
     assert(selection < QEMU_CLIPBOARD_SELECTION__COUNT);
