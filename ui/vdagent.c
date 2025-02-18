@@ -7,6 +7,8 @@
 #include "qemu/units.h"
 #include "hw/qdev-core.h"
 #include "migration/blocker.h"
+#include "migration/vmstate.h"
+#include "migration/qemu-file-types.h"
 #include "ui/clipboard.h"
 #include "ui/console.h"
 #include "ui/input.h"
@@ -907,6 +909,160 @@ static void vdagent_chr_parse(QemuOpts *opts, ChardevBackend *backend,
     cfg->clipboard = qemu_opt_get_bool(opts, "clipboard", VDAGENT_CLIPBOARD_DEFAULT);
 }
 
+static int put_clipboard_info(QEMUFile *f, void *pv, size_t size,
+                              const VMStateField *field, JSONWriter *vmdesc)
+{
+    uint8_t s;
+    VDAgentChardev *vd = container_of(pv, VDAgentChardev, cbpeer);
+    QemuClipboardType type = QEMU_CLIPBOARD_TYPE_TEXT;
+
+    for (s = 0; s < QEMU_CLIPBOARD_SELECTION__COUNT; s++) {
+        QemuClipboardInfo *info = qemu_clipboard_info(s);
+        bool owner = qemu_clipboard_peer_owns(&vd->cbpeer, s);
+        bool has_data = owner && info->types[type].data;
+
+        /* Clipboard metadata: owner info */
+        qemu_put_byte(f, owner);
+        if (!owner) {
+            continue;
+        }
+
+        /* Clipboard metadata: data exists ? */
+        qemu_put_byte(f, has_data);
+
+        /* Migrate clipboard data that own to vdagent */
+        if (has_data) {
+	    qemu_put_be32(f, info->types[type].size);
+            qemu_put_buffer(f, info->types[type].data, info->types[type].size);
+        }
+    }
+
+    return 0;
+}
+
+static int get_clipboard_info(QEMUFile *f, void *pv, size_t size,
+                              const VMStateField *field)
+{
+    uint8_t s;
+    VDAgentChardev *vd = container_of(pv, VDAgentChardev, cbpeer);
+    QemuClipboardInfo *info = NULL;
+    QemuClipboardType type = QEMU_CLIPBOARD_TYPE_TEXT;
+
+    for (s = 0; s < QEMU_CLIPBOARD_SELECTION__COUNT; s++) {
+        bool has_data;
+        uint8_t *data;
+        uint32_t len;
+
+        if (unlikely(qemu_clipboard_info(s))) {
+            continue;
+        }
+
+	/* Owner ? */
+        if (!qemu_get_byte(f)) {
+            continue;
+        }
+
+        info = qemu_clipboard_info_new(&vd->cbpeer, s);
+        if (!(has_data = qemu_get_byte(f))) {
+           continue;
+        }
+
+        /* Load clipboard data that own to vdagent */
+        if (has_data) {
+            len = qemu_get_be32(f);
+            data = g_malloc(len);
+            qemu_get_buffer(f, data, len);
+
+            qemu_clipboard_set_data(&vd->cbpeer, info,
+                                    type, len, data, false);
+            qemu_clipboard_update_silent(info);
+            g_free(data);
+        } else {
+            qemu_clipboard_set_data(&vd->cbpeer, info,
+                                    type, 0, NULL, false);
+            qemu_clipboard_update_silent(info);
+        }
+    }
+
+    return 0;
+}
+
+static const VMStateInfo vmstate_info_clipboard_info = {
+    .name = "clipboard info",
+    .get  = get_clipboard_info,
+    .put  = put_clipboard_info,
+};
+
+static int get_vdagent_caps(QEMUFile *f, void *pv, size_t size,
+                            const VMStateField *field)
+{
+    VDAgentChardev *vd = container_of(pv, VDAgentChardev, caps);
+
+    vd->caps = qemu_get_be32(f);
+#if 0
+    trace_vdagent_migration_caps(vd->caps);
+#endif
+
+    if (vd->caps) {
+        if (have_mouse(vd) && vd->mouse_hs) {
+            qemu_input_handler_activate(vd->mouse_hs);
+        }
+
+        vdagent_register_to_qemu_clipboard(vd);
+    }
+
+    return 0;
+}
+
+static int put_vdagent_caps(QEMUFile *f, void *pv, size_t size,
+                            const VMStateField *field, JSONWriter *vmdesc)
+{
+    uint32_t *v = pv;
+    qemu_put_be32s(f, v);
+    return 0;
+}
+
+static const VMStateInfo vmstate_info_vdagent_caps = {
+    .name = "vdagent caps",
+    .get  = get_vdagent_caps,
+    .put  = put_vdagent_caps,
+};
+
+static const VMStateDescription vmstate_vdagent = {
+    .name = "vdagent",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        {
+            .name         = "caps",
+            .version_id   = 0,
+            .field_exists = NULL,
+            .size         = sizeof(uint32_t),
+            .info         = &vmstate_info_vdagent_caps,
+            .flags        = VMS_SINGLE,
+            .offset       = 0,
+        },
+        VMSTATE_UINT32(mouse_x, VDAgentChardev),
+        VMSTATE_UINT32(mouse_y, VDAgentChardev),
+        VMSTATE_UINT32(mouse_btn, VDAgentChardev),
+        VMSTATE_UINT32(mouse_display, VDAgentChardev),
+        {
+            .name         = "cbpeer",
+            .version_id   = 0,
+            .field_exists = NULL,
+            .size         = 0,
+            .info         = &vmstate_info_clipboard_info,
+            .flags        = VMS_SINGLE,
+            .offset       = 0,
+        },
+#if 0
+        VMSTATE_UINT32_ARRAY(last_serial, VDAgentChardev, QEMU_CLIPBOARD_SELECTION__COUNT),
+        VMSTATE_UINT32_ARRAY(cbpending, VDAgentChardev, QEMU_CLIPBOARD_SELECTION__COUNT),
+#endif
+        VMSTATE_END_OF_LIST()
+    },
+};
+
 /* ------------------------------------------------------------------ */
 
 static void vdagent_chr_class_init(ObjectClass *oc, void *data)
@@ -925,6 +1081,7 @@ static void vdagent_chr_init(Object *obj)
     VDAgentChardev *vd = QEMU_VDAGENT_CHARDEV(obj);
 
     buffer_init(&vd->outbuf, "vdagent-outbuf");
+    vmstate_register(NULL, 0, &vmstate_vdagent, vd);
     error_setg(&vd->migration_blocker,
                "The vdagent chardev doesn't yet support migration");
 }

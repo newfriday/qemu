@@ -233,6 +233,18 @@ void qemu_clipboard_info_unref(QemuClipboardInfo *info);
 void qemu_clipboard_update(QemuClipboardInfo *info);
 
 /**
+ * qemu_clipboard_update_silent
+ *
+ * @info: clipboard info.
+ *
+ * Update the qemu clipboard but do not notify registered peers.
+ *
+ * This is used for loading clipboard data on destination side
+ * during live migration.
+ */
+void qemu_clipboard_update_silent(QemuClipboardInfo *info);
+
+/**
  * qemu_clipboard_reset_serial
  *
  * Reset the clipboard serial.
