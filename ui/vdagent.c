@@ -7,6 +7,7 @@
 #include "qemu/units.h"
 #include "hw/qdev-core.h"
 #include "migration/blocker.h"
+#include "migration/vmstate.h"
 #include "ui/clipboard.h"
 #include "ui/console.h"
 #include "ui/input.h"
@@ -923,11 +924,80 @@ static void vdagent_chr_class_init(ObjectClass *oc, void *data)
     cc->chr_accept_input = vdagent_chr_accept_input;
 }
 
+static void vdagent_release_all_clipboards(VDAgentChardev *vd,
+                                           QemuClipboardSelection s)
+{
+    uint32_t type;
+    g_autofree VDAgentMessage *msg = g_malloc0(sizeof(VDAgentMessage) +
+                                               sizeof(uint32_t));
+
+    for (type = 0; type < QEMU_CLIPBOARD_TYPE__COUNT; type++) {
+        if (vd->cbpending[s] & (1 << type)) {
+            vd->cbpending[s] &= ~(1 << type);
+            msg->type = VD_AGENT_CLIPBOARD_RELEASE;
+            vdagent_send_msg(vd, msg);
+        }
+    }
+}
+
+static int vdagent_post_load(void *opaque, int version_id)
+{
+    VDAgentChardev *vd = QEMU_VDAGENT_CHARDEV(opaque);
+    QemuClipboardSelection s = QEMU_CLIPBOARD_SELECTION_CLIPBOARD;
+
+    if (vd->caps) {
+         if (have_mouse(vd)) {
+            vd->mouse_hs =
+                qemu_input_handler_register(&vd->mouse_dev,
+                                            &vdagent_mouse_handler);
+            if (vd->mouse_hs) {
+                qemu_input_handler_activate(vd->mouse_hs);
+            }
+        }
+
+        if (have_clipboard(vd)) {
+            vdagent_register_to_qemu_clipboard(vd);
+            if (have_selection(vd)) {
+                for (; s < QEMU_CLIPBOARD_SELECTION__COUNT; s++) {
+                    vdagent_release_all_clipboards(vd, s);
+                }
+            } else {
+                vdagent_release_all_clipboards(vd, s);
+            }
+        }
+    }
+
+    return 0;
+}
+
+static int vdagent_pre_save(void *opaque)
+{
+    VDAgentChardev *vd = (VDAgentChardev *)opaque;
+
+    qemu_clipboard_peer_unregister(&vd->cbpeer);
+
+    return 0;
+}
+
+static const VMStateDescription vmstate_vdagent = {
+    .name = "vdagent",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .pre_save = vdagent_pre_save,
+    .post_load = vdagent_post_load,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT32(caps, VDAgentChardev),
+        VMSTATE_UINT32_ARRAY(cbpending, VDAgentChardev, QEMU_CLIPBOARD_SELECTION__COUNT),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 static void vdagent_chr_init(Object *obj)
 {
     VDAgentChardev *vd = QEMU_VDAGENT_CHARDEV(obj);
 
     buffer_init(&vd->outbuf, "vdagent-outbuf");
+    vmstate_register(NULL, 0, &vmstate_vdagent, vd);
     error_setg(&vd->migration_blocker,
                "The vdagent chardev doesn't yet support migration");
 }
