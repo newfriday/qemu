@@ -47,6 +47,13 @@ qcrypto_afalg_cipher_ctx_new(QCryptoCipherAlgo alg,
                              const uint8_t *key,
                              size_t nkey, Error **errp);
 
+#elif defined CONFIG_KAE
+
+extern QCryptoCipher *
+qcrypto_kae_cipher_ctx_new(QCryptoCipherAlgorithm alg,
+                           QCryptoCipherMode mode,
+                           const uint8_t *key,
+                           size_t nkey, Error **errp);
 #endif
 
 #endif

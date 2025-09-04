@@ -157,6 +157,8 @@ QCryptoCipher *qcrypto_cipher_new(QCryptoCipherAlgo alg,
 
 #ifdef CONFIG_AF_ALG
     cipher = qcrypto_afalg_cipher_ctx_new(alg, mode, key, nkey, NULL);
+#elif defined CONFIG_KAE
+    cipher = qcrypto_kae_cipher_ctx_new(alg, mode, key, nkey, NULL);
 #endif
 
     if (!cipher) {
