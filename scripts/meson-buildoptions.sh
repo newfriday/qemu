@@ -132,6 +132,7 @@ meson_options_help() {
   printf "%s\n" '  iconv           Font glyph conversion support'
   printf "%s\n" '  igvm            Independent Guest Virtual Machine (IGVM) file support'
   printf "%s\n" '  jack            JACK sound support'
+  printf "%s\n" '  kae             Kunpeng Accelerator Engine (KAE) crypto backend driver'
   printf "%s\n" '  keyring         Linux keyring support'
   printf "%s\n" '  kvm             KVM acceleration support'
   printf "%s\n" '  l2tpv3          l2tpv3 network backend support'
@@ -356,6 +357,8 @@ _meson_option_parse() {
     --interp-prefix=*) quote_sh "-Dinterp_prefix=$2" ;;
     --enable-jack) printf "%s" -Djack=enabled ;;
     --disable-jack) printf "%s" -Djack=disabled ;;
+    --enable-kae) printf "%s" -Dcrypto_kae=enabled ;;
+    --disable-kae) printf "%s" -Dcrypto_kae=disabled ;;
     --enable-keyring) printf "%s" -Dkeyring=enabled ;;
     --disable-keyring) printf "%s" -Dkeyring=disabled ;;
     --enable-kvm) printf "%s" -Dkvm=enabled ;;

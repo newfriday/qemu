@@ -50,6 +50,9 @@ endif
 if have_afalg
   crypto_ss.add(if_true: files('afalg.c', 'cipher-afalg.c', 'hash-afalg.c'))
 endif
+if kae.found()
+  crypto_ss.add(kae, files('cipher-kae.c'))
+endif
 
 system_ss.add(when: gnutls, if_true: files('tls-cipher-suites.c'))
 

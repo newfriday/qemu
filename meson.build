@@ -1949,6 +1949,45 @@ if not gnutls_crypto.found()
   endif
 endif
 
+if get_option('kae').enabled() and get_option('crypto_afalg').enabled()
+  error('Either KAE or afalg can be enabled')
+endif
+
+kae = not_found
+if (not get_option('kae').auto() or have_system)
+  kae = cc.find_library('kae', has_headers: ['warpdrive/wd.h'],
+                               required: get_option('kae'))
+  if kae.found() and not cc.links('''
+    #include <warpdrive/wd.h>
+    #include <warpdrive/wd_bmm.h>
+    #include <warpdrive/wd_cipher.h>
+    int main(void) {
+      struct wd_queue queue;
+      struct wcrypto_cipher_ctx_setup cipher_setup;
+
+      wd_request_queue(&queue);
+      wd_blkpool_create(&queue, NULL);
+      wcrypto_create_cipher_ctx(&queue, NULL);
+
+      cipher_setup.alg = WCRYPTO_CIPHER_SM4;
+      cipher_setup.mode = WCRYPTO_CIPHER_ECB;
+      wcrypto_create_cipher_ctx(&queue, &cipher_setup);
+
+      cipher_setup.alg = WCRYPTO_CIPHER_AES;
+      cipher_setup.mode = WCRYPTO_CIPHER_ECB;
+      wcrypto_create_cipher_ctx(&queue, &cipher_setup);
+
+      return 0;
+    }''', dependencies: kae)
+    kae = not_found
+    if get_option('kae').enabled()
+      error('could not link kae')
+    else
+      warning('could not link kae, disabling')
+    endif
+  endif
+endif
+
 capstone = not_found
 if not get_option('capstone').auto() or have_system or have_user
   capstone = dependency('capstone', version: '>=3.0.5',
@@ -2598,6 +2637,7 @@ config_host_data.set('CONFIG_GNUTLS_BUG1717_WORKAROUND', gnutls_bug1717_workarou
 config_host_data.set('CONFIG_TASN1', tasn1.found())
 config_host_data.set('CONFIG_GCRYPT', gcrypt.found())
 config_host_data.set('CONFIG_NETTLE', nettle.found())
+config_host_data.set('CONFIG_KAE', kae.found())
 config_host_data.set('CONFIG_CRYPTO_SM4', crypto_sm4.found())
 config_host_data.set('CONFIG_CRYPTO_SM3', crypto_sm3.found())
 config_host_data.set('CONFIG_HOGWEED', hogweed.found())
@@ -4894,6 +4934,7 @@ endif
 summary_info += {'SM4 ALG support':   crypto_sm4}
 summary_info += {'SM3 ALG support':   crypto_sm3}
 summary_info += {'AF_ALG support':    have_afalg}
+summary_info += {'KAE support':       kae}
 summary_info += {'rng-none':          get_option('rng_none')}
 summary_info += {'Linux keyring':     have_keyring}
 summary_info += {'Linux keyutils':    keyutils}
